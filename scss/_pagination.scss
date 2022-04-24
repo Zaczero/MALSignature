@@ -1,0 +1,27 @@
+.page-item {
+	.page-link {
+		background: transparentize($primary, .8);
+		color: darken($light, 12);
+
+		transition: all 120ms ease;
+
+		&:hover {
+			background: transparentize($primary, .5);
+			color: $light;
+
+			transform: translateY(-2px);
+		}
+	}
+	
+	&.active {
+		.page-link {
+			background: $primary;
+			color: $light;
+
+			&:hover {
+				background: lighten($primary, 5);
+				color: $light;
+			}
+		}
+	}
+}

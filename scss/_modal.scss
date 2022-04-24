@@ -1,0 +1,15 @@
+.modal {
+	.btn-sm {
+		@extend .py-1;
+		font-size: 12px;
+	}
+}
+
+.modal-content {
+	@extend .fluid-solid;
+	border: 1px solid lighten($dark, 10);
+}
+
+.modal-header {
+	border-bottom: 1px solid lighten($dark, 10);
+}

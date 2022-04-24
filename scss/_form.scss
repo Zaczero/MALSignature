@@ -1,0 +1,19 @@
+.form-control-xsm {
+	@extend .form-control-sm;
+	font-size: 14px;
+}
+
+.form-control {
+	&.error {
+		@extend .mb-1;
+		border-color: $danger;
+	}
+}
+
+label {
+	&.error {
+		@extend .text-danger;
+		font-size: 12px;
+		font-weight: bold;
+	}
+}
