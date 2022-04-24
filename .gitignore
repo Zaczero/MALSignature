@@ -1,6 +1,6 @@
-cache/*
-lock/*
-img/qr/*
-img/signatures/*
+/cache
+/lock
+/img/qr
+/img/signatures
 *.gz
 *.br
