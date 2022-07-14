@@ -66,7 +66,7 @@ class Gen {
 
 		$profile_avatar_url = $matches["url"];
 
-		preg_match_all("/<img .*?(?:data-)?src=\"https:\/\/cdn\.myanimelist\.net\/r\/.*?anime\/(?<id>\d+\/\d+).*?alt=\"(?<name>.+?)\">/s", $profile_html, $matches);
+		preg_match_all("/<img class.*?(?:data-)?src=\"https:\/\/cdn\.myanimelist\.net\/r\/.*?anime\/(?<id>\d+\/\d+).*?alt=\"(?<name>.+?)\">/s", $profile_html, $matches);
 
 		$matches_count = count($matches[0]);
 
