@@ -127,9 +127,9 @@ class Gen {
 			$lock->unlock();
 		}
 
-		$background_raw = imagecreatefromjpeg($background_path);
+		$background_raw = imagecreatefromstring(file_get_contents($background_path));
 
-		if($background_raw === false) {
+		if(!$background_raw) {
 			$err_message = "Failed to fetch anime's background picture from cache";
 			$err_log = true;
 			unlink($background_path);
@@ -153,7 +153,15 @@ class Gen {
 		imagefilledrectangle($image, 6, 6, 56, 56, $border_color);
 
 		// AVATAR
-		$avatar = imagecreatefromjpeg($profile_avatar_path);
+		$avatar = imagecreatefromstring(file_get_contents($profile_avatar_path));
+
+		if(!$avatar) {
+			$err_message = "Failed to fetch user's avatar from cache";
+			$err_log = true;
+			unlink($profile_avatar_path);
+			return false;
+		}
+
 		$avatar_width = imagesx($avatar);
 		$avatar_height = imagesy($avatar);
 
