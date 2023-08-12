@@ -179,14 +179,14 @@ class Gen {
 		if(!$mini) {
 
 			// ANIME LIST
-			Gen::image_string_draw($image, 15, 8, 80,  $font_path, "♦ ".Gen::string_cut($matches["name"][0], 300, $font_path, 15), false);
+			Gen::image_string_draw($image, 15, 8, 80,  $font_path, "♦ ".Gen::string_cut(html_entity_decode($matches["name"][0]), 300, $font_path, 15), false);
 
 			if($matches_count >= 2) {
-				Gen::image_string_draw($image, 15, 8, 102, $font_path, "♦ ".Gen::string_cut($matches["name"][1], 300, $font_path, 15), false);
+				Gen::image_string_draw($image, 15, 8, 102, $font_path, "♦ ".Gen::string_cut(html_entity_decode($matches["name"][1]), 300, $font_path, 15), false);
 			}
 
 			if($matches_count >= 3) {
-				Gen::image_string_draw($image, 15, 8, 124, $font_path, "♦ ".Gen::string_cut($matches["name"][2], 300, $font_path, 15), false);
+				Gen::image_string_draw($image, 15, 8, 124, $font_path, "♦ ".Gen::string_cut(html_entity_decode($matches["name"][2]), 300, $font_path, 15), false);
 			}
 
 			// WATERMARK
