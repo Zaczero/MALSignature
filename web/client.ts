@@ -47,11 +47,15 @@ if (measurementId && location.hostname === "malsignature.com") {
 
 let navigation: AbortController | undefined;
 history.scrollRestoration = "manual";
+document.addEventListener("scrollend", () => {
+  history.replaceState({ ...history.state, scrollY: window.scrollY }, "");
+});
 
 async function navigate(href: string, push = true) {
   navigation?.abort();
   const controller = new AbortController();
   navigation = controller;
+  const previousY = history.state?.scrollY || 0;
   try {
     const response = await fetch(href, { signal: controller.signal });
     if (
@@ -71,10 +75,16 @@ async function navigate(href: string, push = true) {
       location.assign(href);
       return;
     }
-    const previousY = history.state?.scrollY || 0;
+    const rankingNavigation = Boolean(
+      document.querySelector(".ranking-panel") &&
+        nextMain.querySelector(".ranking-panel"),
+    );
+    const reducedMotion = matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
     if (push) {
       history.replaceState({ ...history.state, scrollY: window.scrollY }, "");
-      history.pushState({}, "", href);
+      history.pushState({ scrollY: window.scrollY }, "", href);
     }
     const update = () => {
       if (controller.signal.aborted) return;
@@ -110,13 +120,20 @@ async function navigate(href: string, push = true) {
       const heading = document.querySelector<HTMLElement>("h1");
       heading?.setAttribute("tabindex", "-1");
       heading?.focus({ preventScroll: true });
-      window.scrollTo({ top: push ? 0 : previousY, behavior: "instant" });
-      scrollToUser();
+      if (!push) {
+        window.scrollTo({ top: previousY, behavior: "instant" });
+      } else if (rankingNavigation) {
+        const behavior = reducedMotion ? "instant" : "smooth";
+        if (!scrollToUser(behavior))
+          nextMain
+            .querySelector(".ranking-panel")!
+            .scrollIntoView({ block: "start", behavior });
+      } else {
+        window.scrollTo({ top: 0, behavior: "instant" });
+        scrollToUser();
+      }
     };
-    if (
-      document.startViewTransition &&
-      !matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
+    if (document.startViewTransition && !rankingNavigation && !reducedMotion) {
       const transition = document.startViewTransition(update);
       // A newer navigation can skip the animation without cancelling its update.
       await Promise.all([
@@ -352,15 +369,17 @@ async function search(form: HTMLFormElement) {
   }
 }
 
-function scrollToUser() {
-  if (!location.hash.startsWith("#user-")) return;
+function scrollToUser(behavior: ScrollBehavior = "instant") {
+  if (!location.hash.startsWith("#user-")) return false;
   const row = document.getElementById(
     decodeURIComponent(location.hash.slice(1)),
   );
   if (row) {
-    row.scrollIntoView({ block: "center", behavior: "instant" });
+    row.scrollIntoView({ block: "center", behavior });
     row.querySelector<HTMLAnchorElement>("a")?.focus({ preventScroll: true });
+    return true;
   }
+  return false;
 }
 initializeResult();
 scrollToUser();
