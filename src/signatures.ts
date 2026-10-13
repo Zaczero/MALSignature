@@ -159,10 +159,15 @@ export class Signatures {
       });
     }
     const etag = `"${key.split(".")[0]}"`;
+    const cacheSeconds = Math.max(
+      60,
+      Math.ceil(
+        (freshnessSeconds * 1000 - (Date.now() - current.updated)) / 1000,
+      ),
+    );
     const headers = {
       "Content-Type": "image/png",
-      "Cache-Control":
-        "public, max-age=60, s-maxage=300, stale-while-revalidate=60",
+      "Cache-Control": `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}, stale-while-revalidate=86400, stale-if-error=604800`,
       ETag: etag,
       "Last-Modified": new Date(current.updated).toUTCString(),
       "X-Content-Type-Options": "nosniff",

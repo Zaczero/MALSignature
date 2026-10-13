@@ -50,7 +50,11 @@ retaining PNGs in backups also preserves last-good images for deleted profiles.
 Run `bun run prune` daily. It removes images after 30 days without an origin
 access while retaining accounts and totals. Images served by the CDN do not
 update SQLite, so use the origin's short image cache lifetime, not an
-indefinitely cached image policy.
+indefinitely cached image policy. Signature responses cache for the remaining
+portion of their one-hour refresh window, with a one-minute minimum, 24 hours
+of stale-while-revalidate and seven days of stale-if-error. Existing images are
+returned immediately while origin refreshes run in the background. This keeps origin access recent
+enough for inactivity pruning while avoiding per-request revalidation.
 
 The fleet checkout lives at `/home/malsignature`. Update it with `git pull
 --ff-only`, restart `malsignature.service`, then start

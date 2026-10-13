@@ -277,6 +277,41 @@ test("Existing signatures remain fresh for one hour", async () => {
   expect(requests).toBe(1);
 });
 
+test("Signature cache freshness follows image age with bounded refresh headroom", async () => {
+  const app = await application();
+  app.state.publish("Cached_User", "normal.png", "small.png", null);
+  app.state.defer("Cached_User", new ProfileError("Profile unavailable", 404));
+  const signatures = new Signatures(app.state, app.images);
+  const request = new Request(
+    "https://malsignature.com/?/view?username=Cached_User",
+  );
+  for (const [ageSeconds, remaining] of [
+    [0, 3600],
+    [1800, 1800],
+    [3590, 60],
+    [7200, 60],
+  ]) {
+    app.state.db
+      .query("UPDATE signatures SET updated = ?")
+      .run(Date.now() - ageSeconds * 1000);
+    const response = await signatures.view("Cached_User", "normal", request);
+    expect(response.headers.get("Cache-Control")).toBe(
+      `public, max-age=${remaining}, s-maxage=${remaining}, stale-while-revalidate=86400, stale-if-error=604800`,
+    );
+    const conditional = await signatures.view(
+      "Cached_User",
+      "normal",
+      new Request(request, {
+        headers: { "If-None-Match": response.headers.get("ETag")! },
+      }),
+    );
+    expect(conditional.status).toBe(304);
+    expect(conditional.headers.get("Cache-Control")).toBe(
+      response.headers.get("Cache-Control"),
+    );
+  }
+});
+
 test("Deleted profiles are negatively cached across restart and retry more slowly", async () => {
   const app = await application();
   let requests = 0;
