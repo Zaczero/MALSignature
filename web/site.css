@@ -705,10 +705,23 @@ tbody th a {
 tbody tr:hover {
   background: #d5d2ff06;
 }
-tbody tr:target {
+tbody tr:target,
+tbody tr.search-match {
   background: #9e9aff20;
   outline: 1px solid #aaa5ff60;
   outline-offset: -1px;
+}
+tbody tr.search-match {
+  animation: search-match-pulse 0.7s ease-in-out 2;
+}
+@keyframes search-match-pulse {
+  0%,
+  100% {
+    background-color: #9e9aff20;
+  }
+  50% {
+    background-color: #bcb1ff55;
+  }
 }
 .numeric {
   text-align: right;

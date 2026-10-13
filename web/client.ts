@@ -375,6 +375,19 @@ function scrollToUser(behavior: ScrollBehavior = "instant") {
     decodeURIComponent(location.hash.slice(1)),
   );
   if (row) {
+    const bounds = row.getBoundingClientRect();
+    const highlight = () => {
+      if (row.isConnected) row.classList.add("search-match");
+    };
+    if (
+      behavior === "smooth" &&
+      (bounds.bottom <= 0 || bounds.top >= window.innerHeight)
+    ) {
+      document.addEventListener("scrollend", highlight, {
+        once: true,
+        signal: navigation?.signal,
+      });
+    } else highlight();
     row.scrollIntoView({ block: "center", behavior });
     row.querySelector<HTMLAnchorElement>("a")?.focus({ preventScroll: true });
     return true;
