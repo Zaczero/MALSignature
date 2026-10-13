@@ -41,6 +41,21 @@
       }
     }
   ],
+  "http_ratelimit": [
+    {
+      "ref": "malsignature_generation_rate",
+      "description": "Limit repeated signature generation requests",
+      "enabled": true,
+      "expression": "(http.host eq \"malsignature.com\" and http.request.uri.path eq \"/api/generate\" and http.request.method eq \"POST\")",
+      "action": "block",
+      "ratelimit": {
+        "characteristics": ["cf.colo.id", "ip.src"],
+        "period": 10,
+        "requests_per_period": 10,
+        "mitigation_timeout": 10
+      }
+    }
+  ],
   "http_request_cache_settings": [
     {
       "ref": "malsignature_png_cache",

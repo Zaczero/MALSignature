@@ -71,7 +71,8 @@ Provision the following before attaching the catch-all static route:
 3. Retain the complete query string in image cache keys. Do not enable Ignore
    Query String or query-string sorting for these URLs: names, styles and
    duplicate-parameter ordering affect the response.
-4. Apply generation-specific, challenge-free rate limiting to `/api/generate`.
+4. The generation rate rule limits `/api/generate` to ten requests per ten
+   seconds per source address at each Cloudflare location, without a challenge.
    The application's admission limits remain 20 new profiles/minute,
    60 refreshes/minute and four concurrent jobs. Image delivery must remain
    challenge-free.
