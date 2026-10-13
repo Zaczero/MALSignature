@@ -33,7 +33,11 @@ ${options.noindex ? '<meta name="robots" content="noindex">' : ""}
 <meta property="og:url" content="${escapeHTML(canonical)}"><meta property="og:image" content="${origin}/assets/social.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="analytics-id" content="${escapeHTML(options.ga || "")}">
-<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/favicon-16.png" type="image/png" sizes="16x16">
+<link rel="icon" href="/assets/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/assets/favicon-48.png" type="image/png" sizes="48x48">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="/assets/favicon-180.png" sizes="180x180">
 <link rel="stylesheet" href="/assets/site.css"><script type="module" src="/assets/client.js"></script>
 <script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "WebApplication", name: "MALSignature", url: origin, applicationCategory: "MultimediaApplication", operatingSystem: "Any", description: "Create automatically updating MyAnimeList signature images.", offers: { "@type": "Offer", price: "0", priceCurrency: "USD" } }).replaceAll("<", "\\u003c")}</script>
 </head><body>
@@ -41,7 +45,7 @@ ${options.noindex ? '<meta name="robots" content="noindex">' : ""}
 <div class="backdrop" aria-hidden="true"></div>
 <header class="site-header">
   <a class="brand" href="/" aria-label="MALSignature home"><span class="brand-mark">${icon("spark")}</span><span>MAL<span class="brand-light">Signature</span></span></a>
-  <nav aria-label="Main navigation"><a href="/" ${path === "/" || path === "/signature/" ? 'aria-current="page"' : ""}>Generator</a><a href="/ranking/" ${path.startsWith("/ranking") ? 'aria-current="page"' : ""}>Leaderboard</a></nav>
+   <nav aria-label="Main navigation"><span class="nav-indicator" aria-hidden="true"></span><a href="/" ${path === "/" || path === "/signature/" ? 'aria-current="page"' : ""}>Generator</a><a href="/ranking/" ${path.startsWith("/ranking") ? 'aria-current="page"' : ""}>Leaderboard</a></nav>
 </header>
 <main id="main" tabindex="-1">${content}</main>
 <footer class="site-footer"><span>Made for the anime you love.</span><span>By <a href="https://monicz.dev/">Zaczero</a><span class="footer-dot" aria-hidden="true">·</span><a href="https://github.com/Zaczero/MALSignature">Source</a></span><small>Independent project. Not affiliated with MyAnimeList.</small></footer>
@@ -111,7 +115,7 @@ export function result(ga = "") {
     ]
       .map(
         ([key, label, hint]) =>
-          `<div class="embed-field"><label for="embed-${key}">${label}${hint ? `<span>${hint}</span>` : ""}</label><div class="copy-row"><input id="embed-${key}" readonly spellcheck="false" aria-label="${label}"><button type="button" class="copy-button" data-copy="${key}" aria-label="Copy ${label}">${icon("copy")}<span>Copy</span></button></div></div>`,
+          `<div class="embed-field"><label for="embed-${key}">${label}${hint ? `<span>${hint}</span>` : ""}</label><div class="copy-row"><input id="embed-${key}" readonly spellcheck="false" aria-label="${label}"><button type="button" class="copy-button" data-copy="${key}" aria-label="Copy ${label}">${icon("copy")}${icon("check")}<span>Copy</span></button></div></div>`,
       )
       .join("")}
   </div>

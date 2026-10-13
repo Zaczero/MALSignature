@@ -139,6 +139,7 @@ main h1[tabindex="-1"]:focus {
   top: 1rem;
 }
 .site-header {
+  view-transition-name: site-header;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -172,14 +173,34 @@ main h1[tabindex="-1"]:focus {
   box-shadow: inset 0 1px #ffffff15;
 }
 .site-header nav {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  position: relative;
+  isolation: isolate;
   padding: 5px;
   gap: 4px;
   border-radius: 100px;
   background: #0e10283b;
   border: 1px solid var(--line);
 }
+.nav-indicator {
+  position: absolute;
+  z-index: -1;
+  inset: 5px auto 5px 5px;
+  width: calc((100% - 14px) / 2);
+  border-radius: 100px;
+  background: #c3c1f91c;
+  box-shadow: inset 0 1px #ffffff15;
+  view-transition-name: navigation-pill;
+}
+.site-header nav:has(a[href="/ranking/"][aria-current]) .nav-indicator {
+  left: calc(50% + 2px);
+}
+.site-header nav:not(:has(a[aria-current])) .nav-indicator {
+  visibility: hidden;
+}
 .site-header nav a {
+  text-align: center;
   padding: 0.65rem 1.15rem;
   border-radius: 100px;
   text-decoration: none;
@@ -188,9 +209,19 @@ main h1[tabindex="-1"]:focus {
   color: #bac0da;
 }
 .site-header nav a[aria-current] {
-  background: #c3c1f91c;
   color: #f3f2ff;
-  box-shadow: inset 0 1px #ffffff15;
+}
+::view-transition-group(navigation-pill) {
+  animation-duration: 0.25s;
+  animation-timing-function: var(--ease-3);
+}
+::view-transition-old(site-header),
+::view-transition-old(navigation-pill) {
+  display: none;
+}
+::view-transition-new(site-header),
+::view-transition-new(navigation-pill) {
+  animation: none;
 }
 main {
   max-width: 1120px;
@@ -486,11 +517,28 @@ input::placeholder {
   color: var(--muted);
 }
 .style-switch {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  position: relative;
+  isolation: isolate;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 4px;
   background: #070b2140;
+}
+.style-switch::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 4px auto 4px 4px;
+  width: calc((100% - 8px) / 2);
+  border-radius: 7px;
+  background: #a5a4f330;
+  box-shadow: inset 0 1px #ffffff18;
+  transition: transform 0.2s var(--ease-3);
+}
+.style-switch:has([data-style="small"][aria-pressed="true"])::before {
+  transform: translateX(100%);
 }
 .style-switch button {
   border: 0;
@@ -502,9 +550,7 @@ input::placeholder {
   min-height: 38px;
 }
 .style-switch button[aria-pressed="true"] {
-  background: #a5a4f330;
   color: #fff;
-  box-shadow: inset 0 1px #ffffff18;
 }
 .result-preview {
   display: flex;
@@ -518,6 +564,13 @@ input::placeholder {
   height: auto;
   box-shadow: 0 8px 30px #0005;
   border-radius: 2px;
+}
+.copy-button svg:nth-of-type(2),
+.copy-button[data-copied] svg:first-of-type {
+  display: none;
+}
+.copy-button[data-copied] svg:nth-of-type(2) {
+  display: block;
 }
 .result-size {
   color: var(--subtle);
@@ -976,9 +1029,9 @@ tbody .numeric {
     /* biome-ignore lint/complexity/noImportantStyles: The user's motion preference overrides component rules. */
     animation: none !important;
   }
-  ::view-transition-old(root),
-  ::view-transition-new(root) {
-    animation: none;
+  ::view-transition-group(*) {
+    /* biome-ignore lint/complexity/noImportantStyles: Cross-document transitions respect reduced motion too. */
+    animation-duration: 0s !important;
   }
 }
 @media (prefers-reduced-transparency: reduce) {

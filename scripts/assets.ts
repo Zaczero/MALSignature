@@ -7,7 +7,7 @@ export async function buildAssets(directory: string) {
   const paths = new Map<string, string>();
   const write = async (name: string, content: Uint8Array | string) => {
     const hash = Bun.hash.xxHash3(content).toString(16);
-    const filename = name.replace(/(\.[^.]+)$/, `-${hash}$1`);
+    const filename = name.replace(/(\.[^.]+)$/, `.${hash}$1`);
     await Bun.write(join(directory, filename), content);
     paths.set(`/assets/${name}`, `/assets/${filename}`);
   };
@@ -43,10 +43,15 @@ export async function buildAssets(directory: string) {
         .toBuffer(),
     );
   }
-  await write(
-    "favicon.svg",
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="20" fill="#17192f"/><path d="m32 10 6 16 16 6-16 6-6 16-6-16-16-6 16-6Z" fill="#c7b8ff"/></svg>',
-  );
+  const favicon =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#c7b8ff"/><path d="m16 3 3.5 9.5L29 16l-9.5 3.5L16 29l-3.5-9.5L3 16l9.5-3.5Z" fill="#17192f"/></svg>';
+  await write("favicon.svg", favicon);
+  for (const size of [16, 32, 48, 180]) {
+    await write(
+      `favicon-${size}.png`,
+      await sharp(Buffer.from(favicon)).resize(size, size).png().toBuffer(),
+    );
+  }
   const card = createCanvas(1200, 630);
   const ctx = card.getContext("2d");
   const gradient = ctx.createLinearGradient(0, 0, 1200, 630);

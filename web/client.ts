@@ -93,9 +93,19 @@ async function navigate(href: string, push = true) {
         for (const element of documentNext.querySelectorAll(selector))
           document.head.append(element.cloneNode(true));
       }
-      document
-        .querySelector(".site-header nav")
-        ?.replaceWith(documentNext.querySelector(".site-header nav")!);
+      for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
+        ".site-header nav a",
+      )) {
+        if (
+          documentNext.querySelector(
+            `.site-header nav a[href="${anchor.getAttribute("href")}"][aria-current]`,
+          )
+        ) {
+          anchor.setAttribute("aria-current", "page");
+        } else {
+          anchor.removeAttribute("aria-current");
+        }
+      }
       initializeResult();
       const heading = document.querySelector<HTMLElement>("h1");
       heading?.setAttribute("tabindex", "-1");
@@ -265,7 +275,7 @@ function initializeResult() {
 document.addEventListener("click", async (click) => {
   const target = click.target as Element;
   const style = target.closest<HTMLButtonElement>("[data-style]");
-  if (style) {
+  if (style && style.getAttribute("aria-pressed") !== "true") {
     const url = new URL(location.href);
     url.searchParams.set("style", style.dataset.style!);
     history.replaceState(history.state, "", url);
@@ -282,8 +292,10 @@ document.addEventListener("click", async (click) => {
       announce(`${copy.getAttribute("aria-label")} copied.`);
       const span = copy.querySelector("span")!;
       span.textContent = "Copied";
+      copy.dataset.copied = "";
       setTimeout(() => {
         span.textContent = "Copy";
+        delete copy.dataset.copied;
       }, 2000);
       event("embed_copied", { format: copy.dataset.copy! });
     } catch {

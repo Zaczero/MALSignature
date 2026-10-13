@@ -79,8 +79,8 @@ test("Static pages and versioned assets carry the hosting header policy", async 
   await mkdir(join(site, "signature"));
   await mkdir(join(site, "ranking/page/2"), { recursive: true });
   await mkdir(join(site, "ranking/search/abcd"), { recursive: true });
-  await Bun.write(join(site, "assets/client-example.js"), "export {}");
-  await Bun.write(join(site, "assets/background-abcd.webp"), "image");
+  await Bun.write(join(site, "assets/client.example.js"), "export {}");
+  await Bun.write(join(site, "assets/background.abcd.webp"), "image");
   await Bun.write(join(site, "ranking/search/abcd/za.json"), "{}");
   await Bun.write(
     join(site, "signature/index.html"),
@@ -99,8 +99,8 @@ test("Static pages and versioned assets carry the hosting header policy", async 
     "strict-origin-when-cross-origin",
   );
   for (const path of [
-    "/assets/client-example.js",
-    "/assets/background-abcd.webp",
+    "/assets/client.example.js",
+    "/assets/background.abcd.webp",
     "/ranking/search/abcd/za.json",
   ]) {
     const asset = await app.handler(new Request(`http://localhost${path}`));
@@ -117,7 +117,7 @@ test("Static pages and versioned assets carry the hosting header policy", async 
   );
   expect(laterRanking.headers.get("X-Robots-Tag")).toBe("noindex");
   const missing = await app.handler(
-    new Request("http://localhost/assets/client-missing.js"),
+    new Request("http://localhost/assets/client.missing.js"),
   );
   expect(missing.status).toBe(404);
   expect(missing.headers.get("Cache-Control")).toBe("no-store");
@@ -302,7 +302,7 @@ test("Signature cache freshness follows image age with bounded refresh headroom"
       "Cached_User",
       "normal",
       new Request(request, {
-        headers: { "If-None-Match": response.headers.get("ETag")! },
+        headers: { "If-None-Match": response.headers.get("ETag") ?? "" },
       }),
     );
     expect(conditional.status).toBe(304);

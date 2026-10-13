@@ -43,9 +43,9 @@ export async function build() {
       splitting: true,
       format: "esm",
       naming: {
-        entry: "[name]-[hash].[ext]",
-        chunk: "chunk-[hash].[ext]",
-        asset: "[name]-[hash].[ext]",
+        entry: "[name].[hash].[ext]",
+        chunk: "chunk.[hash].[ext]",
+        asset: "[name].[hash].[ext]",
       },
       sourcemap: "external",
       minify: true,
