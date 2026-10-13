@@ -17,7 +17,7 @@ const server = Bun.serve({
   port: Number(process.env.PORT || 3000),
   maxRequestBodySize: 4096,
   idleTimeout: 60,
-  fetch: createHandler(signatures, publicDirectory),
+  fetch: createHandler(signatures, publicDirectory, process.env.SITE_ORIGIN),
 });
 console.log(`MALSignature listening on ${server.url}`);
 for (const signal of ["SIGTERM", "SIGINT"] as const) {

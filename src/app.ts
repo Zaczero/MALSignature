@@ -5,8 +5,13 @@ import { imageRoute } from "./routes";
 import type { Signatures } from "./signatures";
 import { staticResponseHeaders } from "./static";
 
-export function createHandler(signatures: Signatures, directory: string) {
+export function createHandler(
+  signatures: Signatures,
+  directory: string,
+  publicOrigin?: string,
+) {
   const root = resolve(directory);
+  const expectedOrigin = publicOrigin ? new URL(publicOrigin).origin : null;
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     try {
@@ -26,10 +31,10 @@ export function createHandler(signatures: Signatures, directory: string) {
             headers: { Allow: "POST" },
           });
         const from = request.headers.get("Origin");
-        if (from && from !== url.origin)
+        if (from && from !== (expectedOrigin || url.origin))
           return Response.json(
             { error: "Please submit the form from this site." },
-            { status: 403 },
+            { status: 403, headers: { "Cache-Control": "no-store" } },
           );
         const json = request.headers
           .get("Content-Type")

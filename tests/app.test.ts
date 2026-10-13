@@ -123,6 +123,33 @@ test("Static pages and versioned assets carry the hosting header policy", async 
   expect(missing.headers.get("Cache-Control")).toBe("no-store");
 });
 
+test("Generation behind an HTTP proxy validates the configured public HTTPS origin", async () => {
+  const app = await application();
+  app.state.publish("Example_User", "normal.png", "small.png", null);
+  const handler = createHandler(
+    new Signatures(app.state, app.images),
+    join(app.directory, "site"),
+    "https://malsignature.com",
+  );
+  for (const origin of [
+    "https://malsignature.com",
+    "https://elsewhere.example",
+    "http://malsignature.com",
+  ]) {
+    const response = await handler(
+      new Request("http://malsignature.com/api/generate", {
+        method: "POST",
+        headers: { Origin: origin, "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "Example_User" }),
+      }),
+    );
+    expect(response.status).toBe(
+      origin === "https://malsignature.com" ? 200 : 403,
+    );
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  }
+});
+
 test.each(["_headers", "_redirects"])(
   "Hosting metadata %s is not a public asset",
   async (name) => {
