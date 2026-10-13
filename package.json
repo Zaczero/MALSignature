@@ -9,6 +9,7 @@
     "deploy:static": "bun run build && wrangler deploy --assets \"${PUBLIC_DIRECTORY:-dist}\"",
     "start": "bun src/server.ts",
     "ranking": "bun scripts/import-ranking.ts",
+    "activity": "bun scripts/import-activity.ts",
     "prune": "bun scripts/prune.ts",
     "check": "tsc --noEmit",
     "test": "bun test"
