@@ -78,7 +78,10 @@ test("Static pages and versioned assets carry the hosting header policy", async 
   await mkdir(join(site, "assets"));
   await mkdir(join(site, "signature"));
   await mkdir(join(site, "ranking/page/2"), { recursive: true });
+  await mkdir(join(site, "ranking/search/abcd"), { recursive: true });
   await Bun.write(join(site, "assets/client-example.js"), "export {}");
+  await Bun.write(join(site, "assets/background-abcd.webp"), "image");
+  await Bun.write(join(site, "ranking/search/abcd/za.json"), "{}");
   await Bun.write(
     join(site, "signature/index.html"),
     "<h1>Your signature</h1>",
@@ -90,19 +93,21 @@ test("Static pages and versioned assets carry the hosting header policy", async 
   const page = await app.handler(
     new Request("http://localhost/?utm_source=test"),
   );
-  expect(page.headers.get("Cache-Control")).toBe(
-    "public, max-age=0, must-revalidate",
-  );
+  expect(page.headers.get("Cache-Control")).toBe("public, max-age=300");
   expect(page.headers.get("X-Content-Type-Options")).toBe("nosniff");
   expect(page.headers.get("Referrer-Policy")).toBe(
     "strict-origin-when-cross-origin",
   );
-  const script = await app.handler(
-    new Request("http://localhost/assets/client-example.js"),
-  );
-  expect(script.headers.get("Cache-Control")).toBe(
-    "public, max-age=86400, immutable",
-  );
+  for (const path of [
+    "/assets/client-example.js",
+    "/assets/background-abcd.webp",
+    "/ranking/search/abcd/za.json",
+  ]) {
+    const asset = await app.handler(new Request(`http://localhost${path}`));
+    expect(asset.headers.get("Cache-Control")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+  }
   const preview = await app.handler(
     new Request("http://localhost/signature/?username=Example_User"),
   );

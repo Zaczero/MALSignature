@@ -83,6 +83,7 @@ async function navigate(href: string, push = true) {
         'link[rel="canonical"]',
         'meta[name="description"]',
         'meta[name="robots"]',
+        'meta[name="ranking-index"]',
         'meta[property^="og:"]',
       ]) {
         document.querySelectorAll(selector).forEach((element) => {
@@ -306,8 +307,11 @@ async function search(form: HTMLFormElement) {
   const notFound =
     "That username isn’t in this snapshot. New signatures appear with the next daily update.";
   try {
+    const directory = document.querySelector<HTMLMetaElement>(
+      'meta[name="ranking-index"]',
+    )!.content;
     const response = await fetch(
-      `/ranking/search/${encodeURIComponent(query.slice(0, 2))}.json`,
+      `${directory}${encodeURIComponent(query.slice(0, 2))}.json`,
     );
     if (!form.isConnected) return;
     if (response.status === 404) {

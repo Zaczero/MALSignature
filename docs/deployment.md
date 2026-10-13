@@ -27,6 +27,12 @@ force Wrangler under Bun: its local proxy can hang without returning responses.
 `.build/sourcemaps` outside the public directory. The frontend deployment has
 no Worker script and no database or storage bindings.
 
+Generated assets use content-derived filenames and are cached for one year
+with `immutable`. Leaderboard search indexes use a content-versioned directory
+with the same policy. HTML and the sitemap are fresh for five minutes.
+The build retains the preceding day's assets and search indexes for cached
+pages and open tabs.
+
 ## VPS service
 
 Deploy the Git checkout using the fleet's project-shell/systemd mechanism.

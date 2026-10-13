@@ -1,18 +1,15 @@
 import {
-  copyFile,
+  cp,
   mkdir,
   readdir,
   readlink,
   rename,
   rm,
+  stat,
   symlink,
-  utimes,
 } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { createCanvas } from "@napi-rs/canvas";
-import sharp from "sharp";
 import {
-  assetDirectory,
   origin,
   pageSize,
   publicDirectory,
@@ -22,6 +19,7 @@ import { home, notFound, rankingPage, result } from "../src/pages";
 import { rankingSearchIndexes } from "../src/ranking-search";
 import { State } from "../src/state";
 import { staticHeaderRules } from "../src/static";
+import { buildAssets } from "./assets";
 
 export async function build() {
   const state = new State(stateDirectory);
@@ -33,6 +31,11 @@ export async function build() {
   let published = false;
   try {
     await mkdir(join(staging, "assets"), { recursive: true });
+    const assetPaths = await buildAssets(join(staging, "assets"));
+    const searchVersion = Bun.hash
+      .xxHash3(JSON.stringify({ pageSize, entries: ranking.entries }))
+      .toString(16);
+    const searchPath = `/ranking/search/${searchVersion}/`;
     const built = await Bun.build({
       entrypoints: [resolve("web/client.ts"), resolve("web/site.css")],
       outdir: join(staging, "assets"),
@@ -48,6 +51,20 @@ export async function build() {
       minify: true,
       define: { __SENTRY_DEBUG__: "false" },
       external: ["/assets/*"],
+      plugins: [
+        {
+          name: "versioned-backgrounds",
+          setup(builder) {
+            builder.onLoad(
+              { filter: /\/web\/site\.css$/ },
+              async ({ path }) => ({
+                contents: assetPaths(await Bun.file(path).text()),
+                loader: "css",
+              }),
+            );
+          },
+        },
+      ],
     });
     if (!built.success)
       throw new AggregateError(built.logs, "Frontend build failed");
@@ -68,10 +85,7 @@ export async function build() {
           join(".build/sourcemaps", basename(output.path)),
         );
       else if (output.path.endsWith(".js"))
-        await copyFile(
-          output.path,
-          join(".build/sourcemaps", basename(output.path)),
-        );
+        await cp(output.path, join(".build/sourcemaps", basename(output.path)));
     }
     const ga = process.env.GOOGLE_ANALYTICS_ID || "";
     const release = process.env.SENTRY_RELEASE || "";
@@ -80,12 +94,12 @@ export async function build() {
       await mkdir(resolve(destination, ".."), { recursive: true });
       await Bun.write(
         destination,
-        html
+        assetPaths(html)
           .replace("/assets/client.js", `/assets/${basename(script.path)}`)
           .replace("/assets/site.css", `/assets/${basename(stylesheet.path)}`)
           .replace(
             "</head>",
-            `<meta name="release" content="${Bun.escapeHTML(release)}"></head>`,
+            `<meta name="release" content="${Bun.escapeHTML(release)}"><meta name="ranking-index" content="${searchPath}"></head>`,
           ),
       );
     };
@@ -118,7 +132,7 @@ export async function build() {
         rankingPage(ranking, page, ga),
       );
     }
-    const searchDirectory = join(staging, "ranking/search");
+    const searchDirectory = join(staging, searchPath);
     await mkdir(searchDirectory, { recursive: true });
     for (const [prefix, index] of rankingSearchIndexes(ranking)) {
       await Bun.write(
@@ -140,58 +154,27 @@ export async function build() {
         )
         .join("")}</urlset>`,
     );
-    const background = join(assetDirectory, "background.webp");
-    await copyFile(background, join(staging, "assets/background.webp"));
-    await sharp(background)
-      .resize({ width: 2048 })
-      .webp({ quality: 90 })
-      .toFile(join(staging, "assets/background-medium.webp"));
-    await sharp(background)
-      .resize({
-        width: 1216,
-        height: 2160,
-        fit: "cover",
-        withoutEnlargement: true,
-      })
-      .webp({ quality: 90 })
-      .toFile(join(staging, "assets/background-mobile.webp"));
-    for (const name of ["example-normal", "example-small"]) {
-      await sharp(join(assetDirectory, `${name}.png`))
-        .webp({ lossless: true })
-        .toFile(join(staging, "assets", `${name}.webp`));
-    }
-    await Bun.write(
-      join(staging, "assets/favicon.svg"),
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="20" fill="#17192f"/><path d="m32 10 6 16 16 6-16 6-6 16-6-16-16-6 16-6Z" fill="#c7b8ff"/></svg>',
-    );
-    const card = createCanvas(1200, 630);
-    const ctx = card.getContext("2d");
-    const gradient = ctx.createLinearGradient(0, 0, 1200, 630);
-    gradient.addColorStop(0, "#28254a");
-    gradient.addColorStop(1, "#101729");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 1200, 630);
-    ctx.fillStyle = "#f1efff";
-    ctx.font = "bold 76px sans-serif";
-    ctx.fillText("MALSignature", 85, 255);
-    ctx.fillStyle = "#c6bdff";
-    ctx.font = "46px sans-serif";
-    ctx.fillText("Your anime story. Made to share.", 85, 340);
-    await Bun.write(
-      join(staging, "assets/social.png"),
-      await card.encode("png"),
-    );
-    // A cached document may still reference the preceding build's hashed assets.
-    const oldAssets = join(publicDirectory, "assets");
-    for (const file of await readdir(oldAssets).catch(() => [] as string[])) {
-      if (
-        /^(client|site|chunk)-/.test(file) &&
-        !(await Bun.file(join(staging, "assets", file)).exists())
-      ) {
-        const stat = await Bun.file(join(oldAssets, file)).stat();
-        if (Date.now() - stat.mtimeMs < 86_400_000) {
-          await copyFile(join(oldAssets, file), join(staging, "assets", file));
-          await utimes(join(staging, "assets", file), stat.atime, stat.mtime);
+    // Cached pages and open tabs can still reference the preceding publication.
+    for (const directory of ["assets", "ranking/search"]) {
+      const previousDirectory = join(publicDirectory, directory);
+      for (const file of await readdir(previousDirectory).catch(
+        () => [] as string[],
+      )) {
+        const source = join(previousDirectory, file);
+        const destination = join(staging, directory, file);
+        if (
+          await stat(destination).catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== "ENOENT") throw error;
+            return null;
+          })
+        )
+          continue;
+        const info = await stat(source);
+        if (Date.now() - info.mtimeMs < 86_400_000) {
+          await cp(source, destination, {
+            recursive: true,
+            preserveTimestamps: true,
+          });
         }
       }
     }
