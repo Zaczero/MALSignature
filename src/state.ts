@@ -48,7 +48,8 @@ export class State {
         failures INTEGER NOT NULL,
         retry_at INTEGER NOT NULL,
         status INTEGER NOT NULL,
-        message TEXT NOT NULL
+        message TEXT NOT NULL,
+        profile_missing INTEGER NOT NULL DEFAULT 0 CHECK (profile_missing IN (0, 1))
       );
       CREATE TABLE IF NOT EXISTS upstream_retry (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -60,6 +61,23 @@ export class State {
         used INTEGER NOT NULL
       );
     `);
+    this.db
+      .transaction(() => {
+        if (
+          !this.db
+            .query<{ name: string }, []>("PRAGMA table_info(refresh_failures)")
+            .all()
+            .some((column) => column.name === "profile_missing")
+        ) {
+          this.db.exec(
+            "ALTER TABLE refresh_failures ADD COLUMN profile_missing INTEGER NOT NULL DEFAULT 0 CHECK (profile_missing IN (0, 1))",
+          );
+          this.db.exec(
+            "UPDATE refresh_failures SET profile_missing = 1 WHERE status IN (404, 410)",
+          );
+        }
+      })
+      .immediate();
   }
   get(username: string): Signature | null {
     return this.db
@@ -117,8 +135,8 @@ export class State {
   }
   defer(username: string, error: unknown) {
     const previous = this.db
-      .query<{ failures: number }, [string]>(
-        "SELECT failures FROM refresh_failures WHERE username = ?",
+      .query<{ failures: number; profile_missing: number }, [string]>(
+        "SELECT failures, profile_missing FROM refresh_failures WHERE username = ?",
       )
       .get(username);
     const failures = (previous?.failures || 0) + 1;
@@ -131,7 +149,9 @@ export class State {
     const retryAfter = error instanceof ProfileError ? error.retryAfter : 0;
     const retryAt = Date.now() + Math.max(delay, retryAfter) * 1000;
     this.db
-      .query("INSERT OR REPLACE INTO refresh_failures VALUES (?, ?, ?, ?, ?)")
+      .query(
+        "INSERT OR REPLACE INTO refresh_failures(username, failures, retry_at, status, message, profile_missing) VALUES (?, ?, ?, ?, ?, ?)",
+      )
       .run(
         username,
         failures,
@@ -140,6 +160,7 @@ export class State {
         error instanceof ProfileError
           ? error.message
           : "The signature could not be refreshed. Please try again later.",
+        missing || previous?.profile_missing ? 1 : 0,
       );
     if (error instanceof ProfileError && (status === 429 || status === 503)) {
       this.db
@@ -209,7 +230,13 @@ export class State {
   ranking(): Ranking {
     const rows = this.db
       .query<{ username: string; views: number }, []>(
-        "SELECT username, views FROM signatures ORDER BY views DESC, username COLLATE NOCASE",
+        `SELECT username, views FROM signatures
+         WHERE NOT EXISTS (
+           SELECT 1 FROM refresh_failures
+           WHERE refresh_failures.username = signatures.username COLLATE NOCASE
+             AND profile_missing = 1
+         )
+         ORDER BY views DESC, username COLLATE NOCASE`,
       )
       .all();
     return {

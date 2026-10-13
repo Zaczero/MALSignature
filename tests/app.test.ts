@@ -345,6 +345,54 @@ test("Deleted profiles are negatively cached across restart and retry more slowl
   ).toBeGreaterThan(firstDelay);
 });
 
+test("Missing profiles leave rankings until recovery without losing their account or totals", async () => {
+  const app = await application();
+  for (const username of ["Active", "Deleted", "Renamed", "Temporary"]) {
+    app.state.publish(username, "normal.png", "small.png", null);
+  }
+  app.state.db
+    .query("UPDATE signatures SET views = ? WHERE username = ?")
+    .run(1000, "Deleted");
+  app.state.defer("Deleted", new ProfileError("Profile deleted", 404));
+  app.state.defer("Renamed", new ProfileError("Profile gone", 410));
+  app.state.defer("Temporary", new ProfileError("Upstream unavailable", 503));
+  expect(app.state.ranking().entries.map(([username]) => username)).toEqual([
+    "Active",
+    "Temporary",
+  ]);
+  app.state.db.exec("UPDATE refresh_failures SET retry_at = 0");
+  app.state.defer("Deleted", new ProfileError("Upstream unavailable", 503));
+  const reopened = new State(app.directory);
+  cleanups.push(async () => reopened.close());
+  expect(reopened.ranking().entries.map(([username]) => username)).toEqual([
+    "Active",
+    "Temporary",
+  ]);
+  expect(reopened.get("Deleted")).toMatchObject({
+    views: 1000,
+    normal: "normal.png",
+    small: "small.png",
+  });
+  reopened.publish("Deleted", "normal.png", "small.png", null);
+  expect(reopened.ranking().entries).toEqual([
+    ["Deleted", 1000],
+    ["Active", 0],
+    ["Temporary", 0],
+  ]);
+});
+
+test("Existing retry records migrate missing-profile visibility without losing state", async () => {
+  const app = await application();
+  app.state.publish("Old_Deleted", "normal.png", "small.png", null);
+  app.state.defer("Old_Deleted", new ProfileError("Profile deleted", 404));
+  app.state.db.exec("ALTER TABLE refresh_failures DROP COLUMN profile_missing");
+  const reopened = new State(app.directory);
+  cleanups.push(async () => reopened.close());
+  expect(reopened.ranking().entries).toEqual([]);
+  expect(reopened.get("Old_Deleted")?.normal).toBe("normal.png");
+  expect(reopened.retry("Old_Deleted")?.status).toBe(404);
+});
+
 test("An upstream Retry-After stops requests for other usernames too", async () => {
   const app = await application();
   let requests = 0;
