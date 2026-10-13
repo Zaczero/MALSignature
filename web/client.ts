@@ -32,8 +32,9 @@ const measurementId = document.querySelector<HTMLMetaElement>(
 )?.content;
 if (measurementId && location.hostname === "malsignature.com") {
   analytics.dataLayer = [];
-  analytics.gtag = (...args: unknown[]) => {
-    analytics.dataLayer?.push(args);
+  analytics.gtag = function () {
+    // biome-ignore lint/complexity/noArguments: Google tag commands use the native Arguments object.
+    analytics.dataLayer?.push(arguments);
   };
   analytics.gtag("js", new Date());
   analytics.gtag("config", measurementId, { send_page_view: false });
