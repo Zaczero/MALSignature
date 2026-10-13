@@ -1,0 +1,5 @@
+[
+  { "pattern": "malsignature.com/index.php*" },
+  { "pattern": "malsignature.com/view.php*" },
+  { "pattern": "malsignature.com/api/*" }
+]

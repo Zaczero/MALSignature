@@ -4,3 +4,14 @@
 /img/signatures
 *.gz
 *.br
+/.build
+/.data
+/dist
+/dist.pending
+/dist.pending-*
+/dist.previous
+/node_modules
+/.env
+/AGENTS.md
+/.idea
+/.wrangler

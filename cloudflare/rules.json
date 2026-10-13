@@ -1,0 +1,66 @@
+{
+  "http_request_transform": [
+    {
+      "ref": "malsignature_legacy_image_path",
+      "description": "Route legacy root-query image URLs to the VPS",
+      "enabled": true,
+      "expression": "(http.host eq \"malsignature.com\" and http.request.uri.path eq \"/\" and (http.request.uri.query in {\"view\" \"/view\" \"view.php\" \"/view.php\"} or starts_with(http.request.uri.query, \"view?\") or starts_with(http.request.uri.query, \"view&\") or starts_with(http.request.uri.query, \"/view?\") or starts_with(http.request.uri.query, \"/view&\") or starts_with(http.request.uri.query, \"view.php?\") or starts_with(http.request.uri.query, \"view.php&\") or starts_with(http.request.uri.query, \"/view.php?\") or starts_with(http.request.uri.query, \"/view.php&\")))",
+      "action": "rewrite",
+      "action_parameters": {
+        "uri": { "path": { "value": "/index.php" } }
+      }
+    }
+  ],
+  "http_request_dynamic_redirect": [
+    {
+      "ref": "malsignature_legacy_ranking",
+      "description": "Redirect the legacy leaderboard to its static page",
+      "enabled": true,
+      "expression": "(http.host eq \"malsignature.com\" and http.request.uri.path eq \"/\" and (http.request.uri.query in {\"ranking\" \"/ranking\"} or starts_with(http.request.uri.query, \"ranking?\") or starts_with(http.request.uri.query, \"ranking&\") or starts_with(http.request.uri.query, \"/ranking?\") or starts_with(http.request.uri.query, \"/ranking&\")))",
+      "action": "redirect",
+      "action_parameters": {
+        "from_value": {
+          "target_url": { "value": "https://malsignature.com/ranking/" },
+          "status_code": 301,
+          "preserve_query_string": false
+        }
+      }
+    },
+    {
+      "ref": "malsignature_legacy_success",
+      "description": "Redirect the legacy success page to the static preview",
+      "enabled": true,
+      "expression": "(http.host eq \"malsignature.com\" and http.request.uri.path eq \"/\" and (http.request.uri.query in {\"success\" \"/success\"} or starts_with(http.request.uri.query, \"success?\") or starts_with(http.request.uri.query, \"success&\") or starts_with(http.request.uri.query, \"/success?\") or starts_with(http.request.uri.query, \"/success&\")))",
+      "action": "redirect",
+      "action_parameters": {
+        "from_value": {
+          "target_url": { "value": "https://malsignature.com/signature/" },
+          "status_code": 301,
+          "preserve_query_string": false
+        }
+      }
+    }
+  ],
+  "http_request_cache_settings": [
+    {
+      "ref": "malsignature_png_cache",
+      "description": "Cache signature PNGs using their origin freshness headers",
+      "enabled": true,
+      "expression": "(http.host eq \"malsignature.com\" and http.request.method in {\"GET\" \"HEAD\"} and http.request.uri.path in {\"/index.php\" \"/view.php\"})",
+      "action": "set_cache_settings",
+      "action_parameters": {
+        "cache": true,
+        "edge_ttl": { "mode": "respect_origin" },
+        "browser_ttl": { "mode": "respect_origin" }
+      }
+    },
+    {
+      "ref": "malsignature_api_no_cache",
+      "description": "Keep signature generation responses out of the CDN cache",
+      "enabled": true,
+      "expression": "(http.host eq \"malsignature.com\" and starts_with(http.request.uri.path, \"/api/\"))",
+      "action": "set_cache_settings",
+      "action_parameters": { "cache": false }
+    }
+  ]
+}
