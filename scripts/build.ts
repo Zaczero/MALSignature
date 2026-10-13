@@ -49,7 +49,11 @@ export async function build() {
       },
       sourcemap: "external",
       minify: true,
-      define: { __SENTRY_DEBUG__: "false" },
+      define: {
+        "process.env.NODE_ENV": '"production"',
+        __SENTRY_DEBUG__: "false",
+        __SENTRY_TRACING__: "false",
+      },
       external: ["/assets/*"],
       plugins: [
         {

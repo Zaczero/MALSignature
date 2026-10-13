@@ -8,7 +8,6 @@ Sentry.init({
   release:
     document.querySelector<HTMLMetaElement>('meta[name="release"]')?.content ||
     undefined,
-  integrations: [Sentry.browserTracingIntegration()],
 });
 
 export function reportError(error: unknown) {
