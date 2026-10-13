@@ -78,6 +78,11 @@ Provision the following before attaching the catch-all static route:
    phases. Each value is an array of Rulesets API rule objects; it is not a
    replacement entrypoint ruleset. Reconcile by `ref` and preserve unrelated
    rules. Inspect existing rules and Page Rules for overlapping behavior.
+   The image GET/HEAD exception skips browser integrity, user-agent, hotlink,
+   security-level, managed WAF and Super Bot Fight Mode checks for the legacy
+   image endpoints after URL rewriting. Embeds must work for external sites,
+   image proxies and clients without browser headers. Keep zone-wide Bot Fight
+   Mode off; the image exception does not bypass that feature.
 3. Retain the complete query string in image cache keys. Do not enable Ignore
    Query String or query-string sorting for these URLs: names, styles and
    duplicate-parameter ordering affect the response.
@@ -104,6 +109,10 @@ The image Cache Rule respects origin cache headers, including `no-store` on
 errors. The API rule disables caching. These rules use Free-plan operators;
 their availability does not validate remaining rule quota in a particular
 account.
+
+Enable free Smart Tiered Cache in Smart Shield to share origin cache fills
+between Cloudflare locations. Preserve complete query strings in image cache
+keys and origin-controlled freshness.
 
 ## Static releases and ranking updates
 

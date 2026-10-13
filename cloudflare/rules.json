@@ -41,6 +41,20 @@
       }
     }
   ],
+  "http_request_firewall_custom": [
+    {
+      "ref": "malsignature_public_embeds",
+      "description": "Allow signature embeds from external sites and automated image clients",
+      "enabled": true,
+      "expression": "(http.host eq \"malsignature.com\" and http.request.method in {\"GET\" \"HEAD\"} and http.request.uri.path in {\"/index.php\" \"/view.php\"})",
+      "action": "skip",
+      "action_parameters": {
+        "products": ["bic", "hot", "securityLevel", "uaBlock"],
+        "phases": ["http_request_sbfm", "http_request_firewall_managed"]
+      },
+      "logging": { "enabled": true }
+    }
+  ],
   "http_ratelimit": [
     {
       "ref": "malsignature_generation_rate",
