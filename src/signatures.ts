@@ -172,6 +172,8 @@ export class Signatures {
       "Last-Modified": new Date(current.updated).toUTCString(),
       "X-Content-Type-Options": "nosniff",
     };
+    if (request.method === "GET")
+      this.state.activity.record(current.username, Date.now());
     if (request.headers.get("If-None-Match") === etag)
       return new Response(null, { status: 304, headers });
     return new Response(

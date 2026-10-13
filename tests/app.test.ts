@@ -123,6 +123,59 @@ test("Static pages and versioned assets carry the hosting header policy", async 
   expect(missing.headers.get("Cache-Control")).toBe("no-store");
 });
 
+test("Only successful image GETs and revalidations earn shared activity coverage", async () => {
+  const app = await application();
+  const png = await createCanvas(400, 63).encode("png");
+  await app.images.put("activity.png", png);
+  for (const username of ["Active_User", "Head_Only", "Generated_Only"])
+    app.state.publish(username, "activity.png", "activity.png", null);
+  const image = await app.handler(
+    new Request("http://localhost/?/view?username=Active_User&style=normal"),
+  );
+  expect(image.status).toBe(200);
+  const conditional = await app.handler(
+    new Request("http://localhost/view.php?a=active_user&b=1", {
+      headers: { "If-None-Match": image.headers.get("ETag") ?? "" },
+    }),
+  );
+  expect(conditional.status).toBe(304);
+  expect(
+    app.state.db
+      .query<{ username: string; total: number }, []>(
+        "SELECT username, COUNT(*) AS total FROM signature_activity GROUP BY username",
+      )
+      .all(),
+  ).toEqual([{ username: "Active_User", total: 1 }]);
+  expect(
+    (
+      await app.handler(
+        new Request("http://localhost/view.php?a=Head_Only", {
+          method: "HEAD",
+        }),
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (await app.handler(new Request("http://localhost/view.php?a=Unknown")))
+      .status,
+  ).toBe(404);
+  const generated = await app.handler(
+    new Request("http://localhost/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "Generated_Only" }),
+    }),
+  );
+  expect(generated.status).toBe(200);
+  expect(
+    app.state.db
+      .query<{ total: number }, []>(
+        "SELECT COUNT(*) AS total FROM signature_activity",
+      )
+      .get()?.total,
+  ).toBe(1);
+});
+
 test("Generation behind an HTTP proxy validates the configured public HTTPS origin", async () => {
   const app = await application();
   app.state.publish("Example_User", "normal.png", "small.png", null);
@@ -210,8 +263,8 @@ test("Persist imported totals without replacing them when generating images", as
   app.state.access("OLDERUSER", true);
   expect(app.state.get("OlderUser")?.views).toBe(431);
   expect(app.state.ranking().entries).toEqual([
-    ["OlderUser", 431],
-    ["OtherUser", 92],
+    ["OlderUser", 0],
+    ["OtherUser", 0],
   ]);
 });
 
@@ -375,8 +428,8 @@ test("Missing profiles leave rankings until recovery without losing their accoun
   });
   reopened.publish("Deleted", "normal.png", "small.png", null);
   expect(reopened.ranking().entries).toEqual([
-    ["Deleted", 1000],
     ["Active", 0],
+    ["Deleted", 0],
     ["Temporary", 0],
   ]);
 });
@@ -703,14 +756,17 @@ test("An old account whose PNG was pruned can request generation through its exi
 test("Ranking entries and pagination are present in initial HTML and escape names", () => {
   const entries: [string, number][] = Array.from({ length: 101 }, (_, i) => [
     `User${i}`,
-    1000 - i,
+    100 - i,
   ]);
-  entries[0] = ['<script>alert("x")</script>', 3000];
+  entries[0] = ['<script>alert("x")</script>', 54.3];
   const page = rankingPage({ updatedAt: "2026-10-13T00:00:00Z", entries }, 1);
   expect(page).toContain("&lt;script&gt;");
   expect(page).not.toContain('<script>alert("x")</script>');
   expect(page).toContain('href="/ranking/page/2/"');
   expect(page).toContain('scope="row"');
+  expect(page).toContain('class="popularity-score">54.3</span>');
+  expect(page).toContain('style="width:54.3%"');
+  expect(page).toContain('class="numeric">Popularity</th>');
   expect(page).toContain(
     'rel="canonical" href="https://malsignature.com/ranking/"',
   );

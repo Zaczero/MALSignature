@@ -164,24 +164,24 @@ export function rankingPage(ranking: Ranking, page: number, ga = "") {
     `Explore the most popular MyAnimeList signatures. Browse ${total.toLocaleString("en")} signatures or find your place in the community.`,
     path,
     `
-<section class="page-heading ranking-heading"><p class="eyebrow">A LITTLE FRIENDLY COMPETITION</p><h1>The <span class="gradient-text">leaderboard.</span></h1></section>
+<section class="page-heading ranking-heading"><p class="eyebrow">A LITTLE FRIENDLY COMPETITION</p><h1>Popular <span class="gradient-text">signatures.</span></h1></section>
 <section class="glass ranking-panel" aria-labelledby="ranking-heading">
   <div class="ranking-top"><div><h2 id="ranking-heading" class="sr-only">Most popular signatures</h2><p>${total.toLocaleString("en")} signatures · Updated <time datetime="${date.toISOString()}">${dateLabel}</time></p></div>
   <form id="search-form" role="search"><label class="sr-only" for="ranking-search">Find a MyAnimeList username in the ranking</label><input id="ranking-search" name="q" placeholder="Find your username" autocomplete="off" autocapitalize="none" spellcheck="false"><button class="secondary-button" type="submit">Find ${icon("arrow")}</button></form></div>
   <p class="search-message" id="search-message" role="status"></p>
-  <div class="table-scroll"><table><caption class="sr-only">Most popular signatures, page ${page} of ${pages}.</caption><thead><tr><th scope="col">Rank</th><th scope="col">MyAnimeList user</th><th scope="col" class="numeric">Views</th></tr></thead><tbody>
+  <div class="table-scroll"><table><caption class="sr-only">Most popular signatures over the last 30 days, page ${page} of ${pages}.</caption><thead><tr><th scope="col">Rank</th><th scope="col">MyAnimeList user</th><th scope="col" class="numeric">Popularity</th></tr></thead><tbody>
   ${
     rows.length
       ? rows
-          .map(([username, views], i) => {
+          .map(([username, popularity], i) => {
             const rank = (page - 1) * pageSize + i + 1;
-            return `<tr id="user-${escapeHTML(username.toLowerCase())}"><td><span class="rank ${rank <= 3 ? `rank-${rank}` : ""}">${String(rank).padStart(2, "0")}</span></td><th scope="row"><a href="https://myanimelist.net/profile/${encodeURIComponent(username)}">${escapeHTML(username)}</a></th><td class="numeric">${views.toLocaleString("en")}</td></tr>`;
+            return `<tr id="user-${escapeHTML(username.toLowerCase())}"><td><span class="rank ${rank <= 3 ? `rank-${rank}` : ""}">${String(rank).padStart(2, "0")}</span></td><th scope="row"><a href="https://myanimelist.net/profile/${encodeURIComponent(username)}">${escapeHTML(username)}</a></th><td class="numeric"><span class="popularity-score">${popularity.toFixed(1)}</span><span class="popularity-bar" aria-hidden="true"><span style="width:${popularity}%"></span></span></td></tr>`;
           })
           .join("")
       : '<tr><td colspan="3">The first ranking snapshot is on its way.</td></tr>'
   }
   </tbody></table></div>
-  <div class="ranking-bottom"><p>Cached image requests aren’t counted.</p><nav class="pagination" aria-label="Leaderboard pages">${page > 1 ? `<a href="${url(page - 1)}" ${page > 2 ? 'rel="nofollow"' : ""} aria-label="Previous page">←</a>` : ""}${navigation}${page < pages ? `<a href="${url(page + 1)}" rel="nofollow" aria-label="Next page">→</a>` : ""}</nav></div>
+  <div class="ranking-bottom"><p>Last 30 days · Updated daily.</p><nav class="pagination" aria-label="Leaderboard pages">${page > 1 ? `<a href="${url(page - 1)}" ${page > 2 ? 'rel="nofollow"' : ""} aria-label="Previous page">←</a>` : ""}${navigation}${page < pages ? `<a href="${url(page + 1)}" rel="nofollow" aria-label="Next page">→</a>` : ""}</nav></div>
 </section>`,
     { ga, noindex: page > 1 },
   );

@@ -731,6 +731,23 @@ tbody tr.search-match {
 tbody .numeric {
   color: #c4c8e0;
 }
+.popularity-score {
+  display: block;
+}
+.popularity-bar {
+  display: block;
+  width: 4rem;
+  height: 3px;
+  margin: 0.35rem 0 0 auto;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #c8caff16;
+}
+.popularity-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--violet), var(--blue));
+}
 .rank {
   display: inline-flex;
   justify-content: center;

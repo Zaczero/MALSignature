@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { Activity, popularityScore } from "./activity";
 import { ProfileError, usernameInput } from "./profile";
 
 export interface Signature {
@@ -14,7 +15,11 @@ export interface Signature {
 }
 export interface Ranking {
   updatedAt: string;
-  entries: [string, number][];
+  entries: [username: string, popularity: number][];
+}
+export interface ViewRanking {
+  updatedAt: string;
+  entries: [username: string, views: number][];
 }
 export interface Retry {
   failures: number;
@@ -25,6 +30,7 @@ export interface Retry {
 
 export class State {
   readonly db: Database;
+  readonly activity: Activity;
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true });
     this.db = new Database(join(directory, "signatures.sqlite"), {
@@ -78,6 +84,7 @@ export class State {
         }
       })
       .immediate();
+    this.activity = new Activity(this.db);
   }
   get(username: string): Signature | null {
     return this.db
@@ -227,24 +234,34 @@ export class State {
       .all();
     return new Set(rows.map((row) => row.key));
   }
-  ranking(): Ranking {
-    const rows = this.db
-      .query<{ username: string; views: number }, []>(
-        `SELECT username, views FROM signatures
-         WHERE NOT EXISTS (
-           SELECT 1 FROM refresh_failures
-           WHERE refresh_failures.username = signatures.username COLLATE NOCASE
-             AND profile_missing = 1
-         )
-         ORDER BY views DESC, username COLLATE NOCASE`,
-      )
-      .all();
-    return {
-      updatedAt: new Date().toISOString(),
-      entries: rows.map((row) => [row.username, row.views]),
-    };
+  ranking(time = Date.now()): Ranking {
+    return this.db
+      .transaction((): Ranking => {
+        const updated = this.activity.snapshotTime(time);
+        const rows = this.db
+          .query<{ username: string; covered: number }, []>(
+            `SELECT signatures.username, popularity.covered FROM signatures
+             JOIN signature_popularity AS popularity
+               ON popularity.username = signatures.username
+             WHERE NOT EXISTS (
+               SELECT 1 FROM refresh_failures
+               WHERE refresh_failures.username = signatures.username COLLATE NOCASE
+                 AND profile_missing = 1
+             )
+             ORDER BY popularity.covered DESC, signatures.username COLLATE NOCASE`,
+          )
+          .all();
+        return {
+          updatedAt: new Date(updated).toISOString(),
+          entries: rows.map((row) => [
+            row.username,
+            popularityScore(row.covered),
+          ]),
+        };
+      })
+      .immediate();
   }
-  importRanking(ranking: Ranking) {
+  importRanking(ranking: ViewRanking) {
     let skipped = 0;
     this.db.transaction(() => {
       const insert =
