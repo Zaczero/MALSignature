@@ -185,6 +185,7 @@ document.addEventListener("click", (event) => {
   )
     return;
   event.preventDefault();
+  if (url.href === location.href) return;
   void navigate(url.href);
 });
 
