@@ -7,8 +7,11 @@ in
 pkgs.mkShellNoCC {
   packages = with pkgs; [
     bun
+    git
     nodejs # Wrangler's CLI runtime; the application server runs on Bun.
+    sentry-cli
     typescript
+    util-linux
     biome
     (writeShellScriptBin "nixpkgs-update" ''exec bun scripts/nixpkgs-update.ts "$@"'')
   ];

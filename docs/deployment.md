@@ -46,6 +46,17 @@ access while retaining accounts and totals. Images served by the CDN do not
 update SQLite, so use the origin's short image cache lifetime, not an
 indefinitely cached image policy.
 
+The fleet checkout lives at `/home/malsignature`. Update it with `git pull
+--ff-only`, restart `malsignature.service`, then start
+`malsignature-publish.service`. The service builds the origin's static fallback;
+the publication job builds and uploads the Cloudflare assets and private Sentry
+source maps. Both use the checkout's commit as `SENTRY_RELEASE`.
+
+The production build uses Google Analytics measurement ID `G-YM45LLEL4R`.
+Localhost does not load Analytics. Sentry's `malsignature` project is connected
+to `Zaczero/MALSignature`; the publication job associates each release with its
+Git commit and records its production deployment.
+
 ## Initial Cloudflare routing
 
 Provision the following before attaching the catch-all static route:

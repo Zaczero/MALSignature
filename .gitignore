@@ -5,6 +5,7 @@
 *.gz
 *.br
 /.build
+/.build.lock
 /.data
 /dist
 /dist.pending
