@@ -1,4 +1,5 @@
 import "./instrument";
+import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import * as Sentry from "@sentry/bun";
 import { createHandler } from "./app";
@@ -24,6 +25,9 @@ const server = Bun.serve({
   idleTimeout: 60,
   fetch: createHandler(signatures, publicDirectory, process.env.SITE_ORIGIN),
 });
+if (process.env.HTTP_SOCKET) {
+  chmodSync(process.env.HTTP_SOCKET, 0o660);
+}
 console.log(
   `MALSignature listening on ${process.env.HTTP_SOCKET || server.url}`,
 );
