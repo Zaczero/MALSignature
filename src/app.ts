@@ -1,7 +1,7 @@
 import { join, resolve, sep } from "node:path";
-import * as Sentry from "@sentry/bun";
 import { ProfileError } from "./profile";
 import { imageRoute } from "./routes";
+import { captureException } from "./sentry";
 import type { Signatures } from "./signatures";
 import { staticResponseHeaders } from "./static";
 
@@ -49,10 +49,7 @@ export function createHandler(
         }
         if (typeof username !== "string")
           throw new ProfileError("Please enter a username.", 400);
-        const signature = await Sentry.startSpan(
-          { op: "signature.generate", name: "Generate signature" },
-          () => signatures.generate(username),
-        );
+        const signature = await signatures.generate(username);
         if (json)
           return Response.json(
             { username: signature.username },
@@ -123,7 +120,7 @@ export function createHandler(
           },
         );
       }
-      Sentry.captureException(error);
+      captureException(error);
       console.error(error);
       return Response.json(
         { error: "We couldn’t finish that request. Please try again shortly." },

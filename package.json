@@ -17,7 +17,6 @@
   "dependencies": {
     "@napi-rs/canvas": "1.0.11",
     "@sentry/browser": "^11.7.0",
-    "@sentry/bun": "^11.7.0",
     "entities": "^8.1.0",
     "sharp": "^0.35.5"
   },

@@ -31,36 +31,62 @@ export class Activity {
 
   record(username: string, time: number): boolean {
     return this.db
-      .transaction(() => {
-        const previous = this.db
-          .query<{ start: number; end: number }, [string, number]>(
-            "SELECT start, end FROM signature_activity WHERE username = ? AND start <= ? ORDER BY start DESC LIMIT 1",
-          )
-          .get(username, time);
-        let start = time;
-        let end = time + activityHour;
-        if (previous && previous.end >= end) return false;
-        if (previous && previous.end >= start) {
-          start = previous.start;
-          end = Math.max(end, previous.end);
-        }
-        const overlaps = this.db
-          .query<{ end: number }, [string, number, number]>(
-            "DELETE FROM signature_activity WHERE username = ? AND start > ? AND start <= ? RETURNING end",
-          )
-          .all(username, start, end);
-        for (const overlap of overlaps) end = Math.max(end, overlap.end);
-        return (
-          this.db
-            .query(
-              `INSERT INTO signature_activity (username, start, end)
-               SELECT username, ?, ? FROM signatures WHERE username = ?
-               ON CONFLICT (username, start) DO UPDATE SET end = excluded.end`,
-            )
-            .run(start, end, username).changes > 0
-        );
-      })
+      .transaction(() =>
+        this.recordIntervalInTransaction(username, time, time + activityHour),
+      )
       .immediate();
+  }
+
+  /**
+   * Merge a single [start, end] coverage interval into signature_activity.
+   * Callers must hold an active IMMEDIATE write transaction on `this.db`.
+   */
+  recordIntervalInTransaction(
+    username: string,
+    start: number,
+    end: number,
+  ): boolean {
+    const previous = this.db
+      .query<
+        { username: string; start: number; end: number },
+        [string, number]
+      >(
+        "SELECT username, start, end FROM signature_activity WHERE username = ? AND start <= ? ORDER BY start DESC LIMIT 1",
+      )
+      .get(username, start);
+    if (previous && previous.end >= end) return false;
+    let mergedStart = start;
+    let mergedEnd = end;
+    const extending = Boolean(previous && previous.end >= start);
+    if (previous && extending) {
+      mergedStart = previous.start;
+      mergedEnd = Math.max(mergedEnd, previous.end);
+    }
+    const overlaps = this.db
+      .query<{ end: number }, [string, number, number]>(
+        "DELETE FROM signature_activity WHERE username = ? AND start > ? AND start <= ? RETURNING end",
+      )
+      .all(username, mergedStart, mergedEnd);
+    for (const overlap of overlaps)
+      mergedEnd = Math.max(mergedEnd, overlap.end);
+    if (previous && extending) {
+      return (
+        this.db
+          .query(
+            "UPDATE signature_activity SET end = ? WHERE username = ? AND start = ?",
+          )
+          .run(mergedEnd, previous.username, previous.start).changes > 0
+      );
+    }
+    return (
+      this.db
+        .query(
+          `INSERT INTO signature_activity (username, start, end)
+           SELECT username, ?, ? FROM signatures WHERE username = ?
+           ON CONFLICT (username, start) DO UPDATE SET end = excluded.end`,
+        )
+        .run(mergedStart, mergedEnd, username).changes > 0
+    );
   }
 
   updated(): number | null {

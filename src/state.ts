@@ -1,8 +1,19 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { Activity, popularityScore } from "./activity";
+import { Activity, activityHour, popularityScore } from "./activity";
 import { ProfileError, usernameInput } from "./profile";
+
+export interface StateOptions {
+  /**
+   * When > 0, coalesce view counts, last_seen timestamps, and activity
+   * intervals in memory and flush them in a single WAL transaction on this
+   * cadence (and before publish, prune, ranking, or close).
+   */
+  flushIntervalMs?: number;
+}
+
+const maxBufferedEntries = 1000;
 
 export interface Signature {
   username: string;
@@ -31,15 +42,30 @@ export interface Retry {
 export class State {
   readonly db: Database;
   readonly activity: Activity;
-  constructor(directory: string) {
+  private readonly flushIntervalMs: number;
+  private readonly pendingViews = new Map<
+    string,
+    { username: string; views: number; lastSeen: number }
+  >();
+  private readonly pendingActivity = new Map<
+    string,
+    { username: string; start: number; end: number }
+  >();
+  private flushTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(directory: string, options: StateOptions = {}) {
     mkdirSync(directory, { recursive: true });
+    this.flushIntervalMs = options.flushIntervalMs ?? 0;
     this.db = new Database(join(directory, "signatures.sqlite"), {
       create: true,
       strict: true,
     });
     this.db.exec(`
       PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
       PRAGMA busy_timeout = 5000;
+      PRAGMA temp_store = MEMORY;
+      PRAGMA cache_size = -4000;
       CREATE TABLE IF NOT EXISTS signatures (
         username TEXT PRIMARY KEY COLLATE NOCASE,
         views INTEGER NOT NULL DEFAULT 0,
@@ -85,18 +111,105 @@ export class State {
       })
       .immediate();
     this.activity = new Activity(this.db);
+    if (this.flushIntervalMs > 0) {
+      this.flushTimer = setInterval(() => {
+        try {
+          this.flush();
+        } catch (error) {
+          console.error("State flush failed:", error);
+        }
+      }, this.flushIntervalMs);
+      this.flushTimer.unref();
+    }
   }
   get(username: string): Signature | null {
-    return this.db
+    const row = this.db
       .query<Signature, [string]>("SELECT * FROM signatures WHERE username = ?")
       .get(username);
+    if (!row) return null;
+    const pending = this.pendingViews.get(row.username.toLowerCase());
+    if (!pending) return row;
+    return {
+      ...row,
+      views: row.views + pending.views,
+      last_seen: Math.max(row.last_seen, pending.lastSeen),
+    };
   }
   access(username: string, countView: boolean): Signature | null {
+    const now = Date.now();
+    if (this.flushIntervalMs > 0) {
+      const row = this.get(username);
+      if (!row) return null;
+      const key = row.username.toLowerCase();
+      const existing = this.pendingViews.get(key);
+      if (existing) {
+        if (countView) existing.views += 1;
+        if (now > existing.lastSeen) existing.lastSeen = now;
+      } else {
+        this.pendingViews.set(key, {
+          username: row.username,
+          views: countView ? 1 : 0,
+          lastSeen: now,
+        });
+      }
+      if (this.pendingViews.size >= maxBufferedEntries) this.flush();
+      return {
+        ...row,
+        views: row.views + (countView ? 1 : 0),
+        last_seen: Math.max(row.last_seen, now),
+      };
+    }
     return this.db
       .query<Signature, [number, number, string]>(
         "UPDATE signatures SET last_seen = ?, views = views + ? WHERE username = ? RETURNING *",
       )
-      .get(Date.now(), countView ? 1 : 0, username);
+      .get(now, countView ? 1 : 0, username);
+  }
+  recordActivity(username: string, time: number): boolean {
+    if (this.flushIntervalMs <= 0) {
+      return this.activity.record(username, time);
+    }
+    const key = username.toLowerCase();
+    const start = time;
+    const end = time + activityHour;
+    const existing = this.pendingActivity.get(key);
+    if (existing) {
+      // Merge directly when the new interval overlaps or abuts the buffered span.
+      if (start <= existing.end && end >= existing.start) {
+        if (start < existing.start) existing.start = start;
+        if (end > existing.end) existing.end = end;
+        return true;
+      }
+      // Disjoint/out-of-order span: flush buffered state before recording.
+      this.flush();
+    }
+    this.pendingActivity.set(key, { username, start, end });
+    if (this.pendingActivity.size >= maxBufferedEntries) this.flush();
+    return true;
+  }
+  flush() {
+    if (this.pendingViews.size === 0 && this.pendingActivity.size === 0) return;
+    this.db
+      .transaction(() => {
+        if (this.pendingViews.size > 0) {
+          const update = this.db.query(
+            "UPDATE signatures SET last_seen = max(last_seen, ?), views = views + ? WHERE username = ?",
+          );
+          for (const entry of this.pendingViews.values()) {
+            update.run(entry.lastSeen, entry.views, entry.username);
+          }
+        }
+        for (const span of this.pendingActivity.values()) {
+          this.activity.recordIntervalInTransaction(
+            span.username,
+            span.start,
+            span.end,
+          );
+        }
+      })
+      .immediate();
+    this.pendingViews.clear();
+    this.pendingActivity.clear();
   }
   publish(
     username: string,
@@ -104,6 +217,7 @@ export class State {
     small: string,
     inputHash: string | null,
   ) {
+    this.flush();
     this.db.transaction(() => {
       this.db
         .query(`INSERT INTO signatures(username, normal, small, updated, last_seen, input_hash)
@@ -208,6 +322,7 @@ export class State {
       .immediate();
   }
   prune(cutoff: number): string[] {
+    this.flush();
     return this.db
       .transaction(() => {
         const rows = this.db
@@ -235,6 +350,7 @@ export class State {
     return new Set(rows.map((row) => row.key));
   }
   ranking(time = Date.now()): Ranking {
+    this.flush();
     return this.db
       .transaction((): Ranking => {
         const updated = this.activity.snapshotTime(time);
@@ -262,6 +378,7 @@ export class State {
       .immediate();
   }
   importRanking(ranking: ViewRanking) {
+    this.flush();
     let skipped = 0;
     this.db.transaction(() => {
       const insert =
@@ -289,6 +406,11 @@ export class State {
     return { imported: ranking.entries.length - skipped, skipped };
   }
   close() {
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.flush();
     this.db.close();
   }
 }

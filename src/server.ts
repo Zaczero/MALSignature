@@ -1,14 +1,20 @@
 import "./instrument";
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
-import * as Sentry from "@sentry/bun";
 import { createHandler } from "./app";
-import { publicDirectory, stateDirectory } from "./config";
+import {
+  publicDirectory,
+  stateDirectory,
+  stateFlushIntervalMs,
+} from "./config";
 import { Images } from "./images";
+import { closeSentry } from "./sentry";
 import { Signatures } from "./signatures";
 import { State } from "./state";
 
-const state = new State(stateDirectory);
+const state = new State(stateDirectory, {
+  flushIntervalMs: stateFlushIntervalMs,
+});
 const signatures = new Signatures(
   state,
   new Images(join(stateDirectory, "images")),
@@ -35,7 +41,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, async () => {
     await server.stop();
     await signatures.drain();
-    await Sentry.close();
+    await closeSentry();
     state.close();
     process.exit(0);
   });

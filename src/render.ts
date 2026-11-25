@@ -10,6 +10,10 @@ import sharp from "sharp";
 import { assetDirectory, stateDirectory } from "./config";
 import { fetchMyAnimeList, type Profile } from "./profile";
 
+// Keep libvips memory bounded: renderInputHash already avoids redundant encodes.
+sharp.cache(false);
+sharp.concurrency(1);
+
 if (
   !GlobalFonts.registerFromPath(
     join(assetDirectory, "Rounded_Elegance.ttf"),

@@ -1,8 +1,8 @@
-import * as Sentry from "@sentry/bun";
 import { freshnessSeconds, generationLimits } from "./config";
 import type { Images } from "./images";
 import { fetchProfile, ProfileError, usernameInput } from "./profile";
 import { loadProfileImages, renderImages, renderInputHash } from "./render";
+import { captureException } from "./sentry";
 import type { Signature, State } from "./state";
 
 export class Signatures {
@@ -153,7 +153,7 @@ export class Signatures {
     ) {
       void this.ensure(username, current).catch((error) => {
         if (!(error instanceof ProfileError)) {
-          Sentry.captureException(error);
+          captureException(error);
           console.error("Signature refresh failed:", error);
         }
       });
@@ -173,7 +173,7 @@ export class Signatures {
       "X-Content-Type-Options": "nosniff",
     };
     if (request.method === "GET")
-      this.state.activity.record(current.username, Date.now());
+      this.state.recordActivity(current.username, Date.now());
     if (request.headers.get("If-None-Match") === etag)
       return new Response(null, { status: 304, headers });
     return new Response(

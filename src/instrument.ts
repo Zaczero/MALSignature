@@ -1,9 +1,8 @@
-import * as Sentry from "@sentry/bun";
+import { initSentry } from "./sentry";
 import { sentryOptions } from "./telemetry";
 
-Sentry.init({
-  ...sentryOptions,
-  tracesSampleRate: 0.1,
+initSentry({
   dsn: process.env.SENTRY_DSN || sentryOptions.dsn,
   environment: process.env.SENTRY_ENVIRONMENT || "development",
+  release: process.env.SENTRY_RELEASE,
 });
