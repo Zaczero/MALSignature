@@ -1,5 +1,6 @@
 import { readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { avatarCacheTtlMs, coverCacheTtlMs } from "./config";
 import type { Images } from "./images";
 import type { State } from "./state";
 
@@ -39,7 +40,8 @@ export async function prune(
         if (error.code !== "ENOENT") throw error;
         return null;
       });
-    if (stat?.isFile() && stat.mtimeMs < now - day) {
+    const ttl = key.startsWith("cover-") ? coverCacheTtlMs : avatarCacheTtlMs;
+    if (stat?.isFile() && stat.mtimeMs < now - ttl) {
       await unlink(path).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== "ENOENT") throw error;
       });

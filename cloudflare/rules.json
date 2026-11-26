@@ -2,12 +2,27 @@
   "http_request_transform": [
     {
       "ref": "malsignature_legacy_image_path",
-      "description": "Route legacy root-query image URLs to the VPS",
+      "description": "Route legacy root-query image URLs to the VPS and normalize query casing",
       "enabled": true,
       "expression": "(http.host eq \"malsignature.com\" and http.request.uri.path eq \"/\" and (http.request.uri.query in {\"view\" \"/view\" \"view.php\" \"/view.php\"} or starts_with(http.request.uri.query, \"view?\") or starts_with(http.request.uri.query, \"view&\") or starts_with(http.request.uri.query, \"/view?\") or starts_with(http.request.uri.query, \"/view&\") or starts_with(http.request.uri.query, \"view.php?\") or starts_with(http.request.uri.query, \"view.php&\") or starts_with(http.request.uri.query, \"/view.php?\") or starts_with(http.request.uri.query, \"/view.php&\")))",
       "action": "rewrite",
       "action_parameters": {
-        "uri": { "path": { "value": "/index.php" } }
+        "uri": {
+          "path": { "value": "/index.php" },
+          "query": { "expression": "lower(http.request.uri.query)" }
+        }
+      }
+    },
+    {
+      "ref": "malsignature_normalize_image_query",
+      "description": "Normalize image query strings to lowercase so case variants share one edge cache key",
+      "enabled": true,
+      "expression": "(http.host eq \"malsignature.com\" and http.request.uri.query ne \"\" and (http.request.uri.path eq \"/view.php\" or (http.request.uri.path eq \"/index.php\" and (http.request.uri.query in {\"view\" \"/view\" \"view.php\" \"/view.php\"} or starts_with(http.request.uri.query, \"view?\") or starts_with(http.request.uri.query, \"view&\") or starts_with(http.request.uri.query, \"/view?\") or starts_with(http.request.uri.query, \"/view&\") or starts_with(http.request.uri.query, \"view.php?\") or starts_with(http.request.uri.query, \"view.php&\") or starts_with(http.request.uri.query, \"/view.php?\") or starts_with(http.request.uri.query, \"/view.php&\")))))",
+      "action": "rewrite",
+      "action_parameters": {
+        "uri": {
+          "query": { "expression": "lower(http.request.uri.query)" }
+        }
       }
     }
   ],
@@ -46,7 +61,7 @@
       "ref": "malsignature_public_embeds",
       "description": "Allow signature embeds from external sites and automated image clients",
       "enabled": true,
-      "expression": "(http.host eq \"malsignature.com\" and http.request.method in {\"GET\" \"HEAD\"} and http.request.uri.path in {\"/index.php\" \"/view.php\"})",
+      "expression": "(http.host eq \"malsignature.com\" and http.request.method in {\"GET\" \"HEAD\"} and (http.request.uri.path eq \"/view.php\" or (http.request.uri.path eq \"/index.php\" and (http.request.uri.query in {\"view\" \"/view\" \"view.php\" \"/view.php\"} or starts_with(http.request.uri.query, \"view?\") or starts_with(http.request.uri.query, \"view&\") or starts_with(http.request.uri.query, \"/view?\") or starts_with(http.request.uri.query, \"/view&\") or starts_with(http.request.uri.query, \"view.php?\") or starts_with(http.request.uri.query, \"view.php&\") or starts_with(http.request.uri.query, \"/view.php?\") or starts_with(http.request.uri.query, \"/view.php&\")))))",
       "action": "skip",
       "action_parameters": {
         "products": ["bic", "hot", "securityLevel", "uaBlock"],
@@ -79,7 +94,9 @@
       "action": "set_cache_settings",
       "action_parameters": {
         "cache": true,
-        "edge_ttl": { "mode": "respect_origin" },
+        "origin_cache_control": true,
+        "respect_strong_etags": true,
+        "edge_ttl": { "mode": "bypass_by_default" },
         "browser_ttl": { "mode": "respect_origin" }
       }
     },

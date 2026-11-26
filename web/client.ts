@@ -7,11 +7,20 @@ type AnalyticsWindow = Window & {
 };
 const analytics = window as AnalyticsWindow;
 let monitoring: typeof import("./monitoring") | undefined;
-void import("./monitoring")
-  .then((module) => {
-    monitoring = module;
-  })
-  .catch(() => {});
+if (location.hostname === "malsignature.com") {
+  const loadMonitoring = () => {
+    void import("./monitoring")
+      .then((module) => {
+        monitoring = module;
+      })
+      .catch(() => {});
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(loadMonitoring, { timeout: 5000 });
+  } else {
+    setTimeout(loadMonitoring, 1000);
+  }
+}
 
 function announce(message: string) {
   const region = document.querySelector("#announcement");
@@ -57,7 +66,10 @@ async function navigate(href: string, push = true) {
   navigation = controller;
   const previousY = history.state?.scrollY || 0;
   try {
-    const response = await fetch(href, { signal: controller.signal });
+    const targetUrl = new URL(href, location.href);
+    const fetchUrl =
+      targetUrl.pathname === "/signature/" ? targetUrl.pathname : href;
+    const response = await fetch(fetchUrl, { signal: controller.signal });
     if (
       !response.ok ||
       !response.headers.get("content-type")?.includes("text/html")
@@ -334,9 +346,13 @@ async function search(form: HTMLFormElement) {
     input.focus();
     return;
   }
-  message.textContent = "Finding your place…";
   const notFound =
     "That username isn’t in this snapshot. New signatures appear with the next daily update.";
+  if (!/^[a-z0-9_-]{1,32}$/.test(query)) {
+    message.textContent = notFound;
+    return;
+  }
+  message.textContent = "Finding your place…";
   try {
     const directory = document.querySelector<HTMLMetaElement>(
       'meta[name="ranking-index"]',

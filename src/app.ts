@@ -5,6 +5,19 @@ import { captureException } from "./sentry";
 import type { Signatures } from "./signatures";
 import { staticResponseHeaders } from "./static";
 
+function permanentRedirect(location: URL): Response {
+  return new Response(null, {
+    status: 301,
+    headers: {
+      Location: location.href,
+      "Cache-Control": "public, max-age=86400",
+    },
+  });
+}
+
+const fallbackNotFoundHtml =
+  '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="robots" content="noindex"><title>Page not found — MALSignature</title><h1>Not found</h1></html>';
+
 export function createHandler(
   signatures: Signatures,
   directory: string,
@@ -20,7 +33,10 @@ export function createHandler(
         if (!["GET", "HEAD"].includes(request.method))
           return new Response(null, {
             status: 405,
-            headers: { Allow: "GET, HEAD" },
+            headers: {
+              Allow: "GET, HEAD",
+              "Cache-Control": "no-store",
+            },
           });
         return await signatures.view(image.username, image.style, request);
       }
@@ -28,7 +44,10 @@ export function createHandler(
         if (request.method !== "POST")
           return new Response(null, {
             status: 405,
-            headers: { Allow: "POST" },
+            headers: {
+              Allow: "POST",
+              "Cache-Control": "no-store",
+            },
           });
         const from = request.headers.get("Origin");
         if (from && from !== (expectedOrigin || url.origin))
@@ -67,17 +86,25 @@ export function createHandler(
         );
       }
       if (!["GET", "HEAD"].includes(request.method))
-        return new Response(null, { status: 405 });
+        return new Response(null, {
+          status: 405,
+          headers: {
+            Allow: "GET, HEAD",
+            "Cache-Control": "no-store",
+          },
+        });
+      if (url.pathname === "/index.php" && !url.search) {
+        return permanentRedirect(new URL("/", url));
+      }
       const legacyPage =
         url.pathname === "/" &&
         /^\/?(ranking|success)(?:[?&]|$)/.exec(url.search.slice(1));
       if (legacyPage) {
-        return Response.redirect(
+        return permanentRedirect(
           new URL(
             legacyPage[1] === "ranking" ? "/ranking/" : "/signature/",
             url,
           ),
-          301,
         );
       }
       let pathname: string;
@@ -96,15 +123,33 @@ export function createHandler(
         !["/_headers", "/_redirects"].includes(pathname) &&
         (await file.exists()) &&
         (await file.stat()).isFile();
-      const content = exists ? file : Bun.file(join(root, "404.html"));
-      return new Response(request.method === "HEAD" ? null : content, {
-        status: exists ? 200 : 404,
-        headers: {
-          ...staticResponseHeaders(pathname),
-          "Content-Type": exists ? file.type : "text/html; charset=utf-8",
-          ...(!exists ? { "Cache-Control": "no-store" } : {}),
+      if (exists) {
+        return new Response(request.method === "HEAD" ? null : file, {
+          status: 200,
+          headers: {
+            ...staticResponseHeaders(pathname),
+            "Content-Type": file.type,
+          },
+        });
+      }
+      const notFoundFile = Bun.file(join(root, "404.html"));
+      const hasNotFoundPage =
+        (await notFoundFile.exists()) && (await notFoundFile.stat()).isFile();
+      return new Response(
+        request.method === "HEAD"
+          ? null
+          : hasNotFoundPage
+            ? notFoundFile
+            : fallbackNotFoundHtml,
+        {
+          status: 404,
+          headers: {
+            ...staticResponseHeaders(pathname),
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+          },
         },
-      });
+      );
     } catch (error) {
       if (error instanceof ProfileError) {
         return Response.json(

@@ -30,7 +30,7 @@ export function usernameInput(value: string): string {
 }
 
 export async function parseProfile(
-  html: string,
+  input: string | Response,
   requested: string,
 ): Promise<Profile> {
   let title = "";
@@ -72,7 +72,9 @@ export async function parseProfile(
           anime.push({ image: decodeHTML(image), title: decodeHTML(name) });
       },
     });
-  await parser.transform(new Response(html)).text();
+  await parser
+    .transform(typeof input === "string" ? new Response(input) : input)
+    .arrayBuffer();
   const matched = decodeHTML(title)
     .trim()
     .match(/^(.*?)'s Profile/);
@@ -110,7 +112,7 @@ export async function fetchProfile(username: string): Promise<Profile> {
     `https://myanimelist.net/profile/${encodeURIComponent(username)}`,
     "profile",
   );
-  return parseProfile(await response.text(), username);
+  return parseProfile(response, username);
 }
 
 export async function fetchMyAnimeList(

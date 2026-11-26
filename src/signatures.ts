@@ -5,6 +5,79 @@ import { loadProfileImages, renderImages, renderInputHash } from "./render";
 import { captureException } from "./sentry";
 import type { Signature, State } from "./state";
 
+function imageErrorResponse(
+  method: string,
+  message: string,
+  status: number,
+  headers: Record<string, string>,
+): Response {
+  return new Response(
+    method === "HEAD" ? null : JSON.stringify({ error: message }),
+    {
+      status,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        ...headers,
+      },
+    },
+  );
+}
+
+/** RFC 9110 §13.1.2 If-None-Match evaluation with weak comparison, lists, and `*`. */
+function matchesIfNoneMatch(header: string, etag: string): boolean {
+  const trimmed = header.trim();
+  if (trimmed === "*") return true;
+  let index = 0;
+  while (index < trimmed.length) {
+    while (
+      index < trimmed.length &&
+      (trimmed[index] === " " ||
+        trimmed[index] === "\t" ||
+        trimmed[index] === ",")
+    ) {
+      index++;
+    }
+    if (index >= trimmed.length) break;
+    if (trimmed.startsWith("W/", index)) index += 2;
+    if (trimmed[index] !== '"') {
+      const nextComma = trimmed.indexOf(",", index);
+      if (nextComma === -1) break;
+      index = nextComma + 1;
+      continue;
+    }
+    const end = trimmed.indexOf('"', index + 1);
+    if (end === -1) break;
+    const opaque = trimmed.slice(index, end + 1);
+    let after = end + 1;
+    while (
+      after < trimmed.length &&
+      (trimmed[after] === " " || trimmed[after] === "\t")
+    ) {
+      after++;
+    }
+    if (after === trimmed.length || trimmed[after] === ",") {
+      if (opaque === etag) return true;
+      index = after + 1;
+    } else {
+      const nextComma = trimmed.indexOf(",", after);
+      if (nextComma === -1) break;
+      index = nextComma + 1;
+    }
+  }
+  return false;
+}
+
+/** RFC 9110 §13.1.3 If-Modified-Since evaluation with 1-second HTTP-date precision. */
+function matchesIfModifiedSince(
+  header: string,
+  lastModifiedMs: number,
+): boolean {
+  if (!/\d{2}:\d{2}:\d{2}/.test(header)) return false;
+  const parsed = Date.parse(header);
+  if (!Number.isFinite(parsed)) return false;
+  return Math.floor(lastModifiedMs / 1000) * 1000 <= parsed;
+}
+
 export class Signatures {
   private readonly pending = new Map<string, Promise<Signature>>();
   constructor(
@@ -136,21 +209,35 @@ export class Signatures {
     style: "normal" | "small",
     request: Request,
   ): Promise<Response> {
-    username = usernameInput(username);
+    try {
+      username = usernameInput(username);
+    } catch (error) {
+      if (error instanceof ProfileError && error.status === 400) {
+        return imageErrorResponse(request.method, error.message, 400, {
+          "Cache-Control": "public, max-age=86400",
+        });
+      }
+      throw error;
+    }
     let current = this.state.access(username, true);
     if (!current) {
-      throw new ProfileError(
+      return imageErrorResponse(
+        request.method,
         "Generate your signature at MALSignature.com first.",
         404,
+        {
+          "Cache-Control": "no-store",
+          "Cloudflare-CDN-Cache-Control": "public, max-age=60",
+        },
       );
     }
     if (!current[style]) current = await this.ensure(username, current);
     const key = current[style];
     if (!key) throw new Error("Signature generation did not publish an image");
-    if (
-      Date.now() - current.updated >= freshnessSeconds * 1000 &&
-      !this.state.retry(username)
-    ) {
+    const now = Date.now();
+    const stale = now - current.updated >= freshnessSeconds * 1000;
+    const retry = stale ? this.state.retry(username) : null;
+    if (stale && !retry) {
       void this.ensure(username, current).catch((error) => {
         if (!(error instanceof ProfileError)) {
           captureException(error);
@@ -159,23 +246,40 @@ export class Signatures {
       });
     }
     const etag = `"${key.split(".")[0]}"`;
-    const cacheSeconds = Math.max(
-      60,
-      Math.ceil(
-        (freshnessSeconds * 1000 - (Date.now() - current.updated)) / 1000,
-      ),
-    );
+    const cacheSeconds =
+      stale && retry
+        ? Math.min(
+            freshnessSeconds,
+            Math.max(60, Math.ceil((retry.retry_at - now) / 1000)),
+          )
+        : Math.max(
+            60,
+            Math.ceil(
+              (freshnessSeconds * 1000 - (now - current.updated)) / 1000,
+            ),
+          );
+    const lastModified =
+      (await this.images.lastModified(key)) ?? current.updated;
     const headers = {
       "Content-Type": "image/png",
-      "Cache-Control": `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}, stale-while-revalidate=86400, stale-if-error=604800`,
+      "Cache-Control": `public, max-age=${cacheSeconds}, stale-while-revalidate=86400, stale-if-error=604800`,
       ETag: etag,
-      "Last-Modified": new Date(current.updated).toUTCString(),
+      "Last-Modified": new Date(lastModified).toUTCString(),
       "X-Content-Type-Options": "nosniff",
     };
     if (request.method === "GET")
-      this.state.recordActivity(current.username, Date.now());
-    if (request.headers.get("If-None-Match") === etag)
-      return new Response(null, { status: 304, headers });
+      this.state.recordActivity(current.username, now);
+    const ifNoneMatch = request.headers.get("If-None-Match");
+    const notModified =
+      ifNoneMatch !== null
+        ? matchesIfNoneMatch(ifNoneMatch, etag)
+        : (() => {
+            const ifModifiedSince = request.headers.get("If-Modified-Since");
+            return ifModifiedSince !== null
+              ? matchesIfModifiedSince(ifModifiedSince, lastModified)
+              : false;
+          })();
+    if (notModified) return new Response(null, { status: 304, headers });
     return new Response(
       request.method === "HEAD" ? null : this.images.get(key),
       { headers },

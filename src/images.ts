@@ -18,6 +18,15 @@ export class Images {
   get(key: string): BodyInit {
     return Bun.file(join(this.directory, key));
   }
+  async lastModified(key: string): Promise<number | null> {
+    const stat = await Bun.file(join(this.directory, key))
+      .stat()
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+        return null;
+      });
+    return stat?.isFile() ? stat.mtimeMs : null;
+  }
   async remove(key: string) {
     await unlink(join(this.directory, key)).catch(
       (error: NodeJS.ErrnoException) => {

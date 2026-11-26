@@ -9,7 +9,7 @@ const html = `<!doctype html><title>Example_User&#039;s Profile - MyAnimeList.ne
 <div class="updates anime"><img data-src="https://cdn.myanimelist.net/r/80x120/images/anime/1/23.jpg?x=1&amp;y=2" alt="Spice &amp; Wolf"></div>`;
 
 test("Parse the supported profile fields and decode text entities", async () => {
-  expect(await parseProfile(html, "example_user")).toEqual({
+  const expected = {
     username: "Example_User",
     avatar: "https://cdn.myanimelist.net/images/userimages/42.jpg",
     days: "42.5",
@@ -21,7 +21,20 @@ test("Parse the supported profile fields and decode text entities", async () => 
           "https://cdn.myanimelist.net/r/80x120/images/anime/1/23.jpg?x=1&y=2",
       },
     ],
+  };
+  expect(await parseProfile(html, "example_user")).toEqual(expected);
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let offset = 0; offset < html.length; offset += 24) {
+        controller.enqueue(encoder.encode(html.slice(offset, offset + 24)));
+      }
+      controller.close();
+    },
   });
+  expect(await parseProfile(new Response(stream), "example_user")).toEqual(
+    expected,
+  );
 });
 
 test("Reject a different profile rather than render another user's data", async () => {

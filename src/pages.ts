@@ -82,7 +82,7 @@ export function home(ga = "") {
     <div class="preview-heading"><span>THE ORIGINAL LOOK</span><span class="preview-badge">Live stats. Timeless style.</span></div>
     <div class="signature-display"><img src="/assets/example-normal.webp" alt="Example normal signature for Zaczer_o, with profile picture, anime statistics and three recent anime" width="400" height="135" decoding="async"></div>
     <div class="preview-caption"><span class="mini-line" aria-hidden="true"></span> Normal · 400 × 135</div>
-    <div class="signature-display compact-preview"><img src="/assets/example-small.webp" alt="Example compact signature with the same profile picture and statistics" width="400" height="63" decoding="async" loading="lazy"></div>
+    <div class="signature-display compact-preview"><img src="/assets/example-small.webp" alt="Example compact signature with the same profile picture and statistics" width="400" height="63" decoding="async"></div>
     <div class="preview-caption"><span class="mini-line" aria-hidden="true"></span> Compact · 400 × 63</div>
     <p class="preview-note">Two sizes. Same you.</p>
   </div>

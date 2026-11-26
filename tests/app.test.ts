@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -12,6 +12,7 @@ import { type Profile, ProfileError } from "../src/profile";
 import { renderImages, renderInputHash } from "../src/render";
 import { Signatures } from "../src/signatures";
 import { State } from "../src/state";
+import { renderHeadersFile } from "../src/static";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -82,6 +83,8 @@ test("Static pages and versioned assets carry the hosting header policy", async 
   await Bun.write(join(site, "assets/client.example.js"), "export {}");
   await Bun.write(join(site, "assets/background.abcd.webp"), "image");
   await Bun.write(join(site, "ranking/search/abcd/za.json"), "{}");
+  await Bun.write(join(site, "favicon.ico"), new Uint8Array([0, 0, 1, 0]));
+  await Bun.write(join(site, "ranking/index.html"), "<h1>Leaderboard</h1>");
   await Bun.write(
     join(site, "signature/index.html"),
     "<h1>Your signature</h1>",
@@ -93,10 +96,30 @@ test("Static pages and versioned assets carry the hosting header policy", async 
   const page = await app.handler(
     new Request("http://localhost/?utm_source=test"),
   );
-  expect(page.headers.get("Cache-Control")).toBe("public, max-age=300");
+  expect(page.headers.get("Cache-Control")).toBe(
+    "public, max-age=300, stale-while-revalidate=86400, stale-if-error=86400",
+  );
+  expect(page.headers.get("No-Vary-Search")).toBe(
+    'params=("utm_source" "utm_medium" "utm_campaign" "utm_content" "utm_term" "fbclid" "gclid")',
+  );
   expect(page.headers.get("X-Content-Type-Options")).toBe("nosniff");
   expect(page.headers.get("Referrer-Policy")).toBe(
     "strict-origin-when-cross-origin",
+  );
+  expect(page.headers.get("Strict-Transport-Security")).toBe(
+    "max-age=63072000; includeSubDomains; preload",
+  );
+  expect(page.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
+  const ranking = await app.handler(new Request("http://localhost/ranking/"));
+  expect(ranking.headers.get("Cache-Control")).toBe(
+    "public, max-age=300, stale-while-revalidate=86400, stale-if-error=86400",
+  );
+  expect(ranking.headers.get("No-Vary-Search")).toBe("params");
+  const favicon = await app.handler(
+    new Request("http://localhost/favicon.ico"),
+  );
+  expect(favicon.headers.get("Cache-Control")).toBe(
+    "public, max-age=86400, stale-while-revalidate=604800",
   );
   for (const path of [
     "/assets/client.example.js",
@@ -112,15 +135,32 @@ test("Static pages and versioned assets carry the hosting header policy", async 
     new Request("http://localhost/signature/?username=Example_User"),
   );
   expect(preview.headers.get("X-Robots-Tag")).toBe("noindex");
+  expect(preview.headers.get("No-Vary-Search")).toBe("params");
+  expect(preview.headers.get("Cache-Control")).toBe(
+    "public, max-age=300, stale-while-revalidate=86400, stale-if-error=86400",
+  );
   const laterRanking = await app.handler(
     new Request("http://localhost/ranking/page/2/"),
   );
   expect(laterRanking.headers.get("X-Robots-Tag")).toBe("noindex");
+  expect(laterRanking.headers.get("No-Vary-Search")).toBe("params");
+  expect(laterRanking.headers.get("Cache-Control")).toBe(
+    "public, max-age=1800, stale-while-revalidate=86400, stale-if-error=86400",
+  );
   const missing = await app.handler(
     new Request("http://localhost/assets/client.missing.js"),
   );
   expect(missing.status).toBe(404);
   expect(missing.headers.get("Cache-Control")).toBe("no-store");
+
+  const headersFile = renderHeadersFile(["site.def.css", "client.abc.js"]);
+  expect(headersFile).not.toContain("/assets/*");
+  expect(headersFile).toContain(
+    "/assets/client.abc.js\n  Cache-Control: public, max-age=31536000, immutable",
+  );
+  expect(headersFile).toContain(
+    "/assets/site.def.css\n  Cache-Control: public, max-age=31536000, immutable",
+  );
 });
 
 test("Only successful image GETs and revalidations earn shared activity coverage", async () => {
@@ -222,6 +262,7 @@ test.each([
   ["/?ranking", "/ranking/"],
   ["/?/success?username=ranking", "/signature/"],
   ["/?success&username=Example_User", "/signature/"],
+  ["/index.php", "/"],
 ])(
   "Legacy page %s redirects to its static route",
   async (path, destination) => {
@@ -231,6 +272,7 @@ test.each([
     expect(response.headers.get("Location")).toBe(
       `http://localhost${destination}`,
     );
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=86400");
   },
 );
 
@@ -238,7 +280,9 @@ test("The homepage is HTML, unknown routes are 404, and unknown signatures do no
   const app = await application();
   const page = await app.handler(new Request("http://localhost/"));
   expect(page.status).toBe(200);
-  expect(await page.text()).toContain("<h1>");
+  const html = await page.text();
+  expect(html).toContain("<h1>");
+  expect(html).not.toContain('loading="lazy"');
   const missing = await app.handler(
     new Request("http://localhost/does-not-exist"),
   );
@@ -248,6 +292,65 @@ test("The homepage is HTML, unknown routes are 404, and unknown signatures do no
   );
   expect(signature.status).toBe(404);
   expect(signature.headers.get("Cache-Control")).toBe("no-store");
+  expect(signature.headers.get("Cloudflare-CDN-Cache-Control")).toBe(
+    "public, max-age=60",
+  );
+});
+
+test("Missing 404.html falls back cleanly and 405 responses set Allow and Cache-Control", async () => {
+  const app = await application();
+  await rm(join(app.directory, "site", "404.html"));
+  for (const path of ["/index.php?probe=1", "/api/unknown", "/missing"]) {
+    const response = await app.handler(new Request(`http://localhost${path}`));
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Content-Type")).toContain("text/html");
+    expect(await response.text()).toContain("Not found");
+  }
+  const headMissing = await app.handler(
+    new Request("http://localhost/api/unknown", { method: "HEAD" }),
+  );
+  expect(headMissing.status).toBe(404);
+  expect(headMissing.headers.get("Cache-Control")).toBe("no-store");
+  expect(await headMissing.text()).toBe("");
+
+  for (const [path, method, allow] of [
+    ["/view.php?a=Example_User", "POST", "GET, HEAD"],
+    ["/api/generate", "GET", "POST"],
+    ["/api/unknown", "POST", "GET, HEAD"],
+    ["/", "DELETE", "GET, HEAD"],
+  ] as const) {
+    const response = await app.handler(
+      new Request(`http://localhost${path}`, { method }),
+    );
+    expect(response.status).toBe(405);
+    expect(response.headers.get("Allow")).toBe(allow);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  }
+});
+
+test("Image route errors return deterministic 400 caching and edge-only 404 caching", async () => {
+  const app = await application();
+  for (const method of ["GET", "HEAD"] as const) {
+    const bad = await app.handler(
+      new Request("http://localhost/?/view?username=../invalid&style=normal", {
+        method,
+      }),
+    );
+    expect(bad.status).toBe(400);
+    expect(bad.headers.get("Cache-Control")).toBe("public, max-age=86400");
+    if (method === "HEAD") expect(await bad.text()).toBe("");
+
+    const unknown = await app.handler(
+      new Request("http://localhost/view.php?a=Never_Seen&b=1", { method }),
+    );
+    expect(unknown.status).toBe(404);
+    expect(unknown.headers.get("Cache-Control")).toBe("no-store");
+    expect(unknown.headers.get("Cloudflare-CDN-Cache-Control")).toBe(
+      "public, max-age=60",
+    );
+    if (method === "HEAD") expect(await unknown.text()).toBe("");
+  }
 });
 
 test("Persist imported totals without replacing them when generating images", async () => {
@@ -330,11 +433,15 @@ test("Existing signatures remain fresh for one hour", async () => {
   expect(requests).toBe(1);
 });
 
-test("Signature cache freshness follows image age with bounded refresh headroom", async () => {
+test("Signature cache freshness follows image age and retry backoff without s-maxage", async () => {
   const app = await application();
   app.state.publish("Cached_User", "normal.png", "small.png", null);
-  app.state.defer("Cached_User", new ProfileError("Profile unavailable", 404));
-  const signatures = new Signatures(app.state, app.images);
+  const pending = Promise.withResolvers<Profile>();
+  const signatures = new Signatures(
+    app.state,
+    app.images,
+    () => pending.promise,
+  );
   const request = new Request(
     "https://malsignature.com/?/view?username=Cached_User",
   );
@@ -349,7 +456,7 @@ test("Signature cache freshness follows image age with bounded refresh headroom"
       .run(Date.now() - ageSeconds * 1000);
     const response = await signatures.view("Cached_User", "normal", request);
     expect(response.headers.get("Cache-Control")).toBe(
-      `public, max-age=${remaining}, s-maxage=${remaining}, stale-while-revalidate=86400, stale-if-error=604800`,
+      `public, max-age=${remaining}, stale-while-revalidate=86400, stale-if-error=604800`,
     );
     const conditional = await signatures.view(
       "Cached_User",
@@ -362,6 +469,93 @@ test("Signature cache freshness follows image age with bounded refresh headroom"
     expect(conditional.headers.get("Cache-Control")).toBe(
       response.headers.get("Cache-Control"),
     );
+  }
+  pending.reject(new ProfileError("Profile unavailable", 404));
+  await signatures.drain();
+
+  // Active retry backoff scales max-age up to freshnessSeconds instead of hammering at 60s.
+  app.state.db
+    .query("UPDATE signatures SET updated = ?")
+    .run(Date.now() - 7200_000);
+  for (const [retryInSeconds, expectedMaxAge] of [
+    [10, 60],
+    [900, 900],
+    [3600, 3600],
+    [7200, 3600],
+  ]) {
+    app.state.db
+      .query("UPDATE refresh_failures SET retry_at = ? WHERE username = ?")
+      .run(Date.now() + retryInSeconds * 1000, "Cached_User");
+    const response = await signatures.view("Cached_User", "normal", request);
+    expect(response.headers.get("Cache-Control")).toBe(
+      `public, max-age=${expectedMaxAge}, stale-while-revalidate=86400, stale-if-error=604800`,
+    );
+  }
+});
+
+test("Image conditional requests implement RFC 9110 If-None-Match, If-Modified-Since, and content Last-Modified", async () => {
+  const app = await application();
+  const png = await createCanvas(400, 135).encode("png");
+  await app.images.put("abc123.uuid.png", png);
+  const fileTime = Date.UTC(2026, 9, 10, 12, 0, 0);
+  await utimes(
+    join(app.directory, "images", "abc123.uuid.png"),
+    fileTime / 1000,
+    fileTime / 1000,
+  );
+  app.state.publish("Cond_User", "abc123.uuid.png", "abc123.uuid.png", "h1");
+  const signatures = new Signatures(app.state, app.images);
+  const url = "https://malsignature.com/?/view?username=Cond_User";
+
+  const full = await signatures.view("Cond_User", "normal", new Request(url));
+  expect(full.status).toBe(200);
+  expect(full.headers.get("ETag")).toBe('"abc123"');
+  expect(full.headers.get("Last-Modified")).toBe(
+    new Date(fileTime).toUTCString(),
+  );
+
+  // Weak ETag, ETag lists, and wildcard match with 304.
+  for (const header of [
+    '"abc123"',
+    'W/"abc123"',
+    '"other", W/"abc123", "third"',
+    "*",
+  ]) {
+    const res = await signatures.view(
+      "Cond_User",
+      "normal",
+      new Request(url, { headers: { "If-None-Match": header } }),
+    );
+    expect(res.status).toBe(304);
+  }
+
+  // Non-matching If-None-Match overrides matching If-Modified-Since per RFC 9110 §13.1.3.
+  const overridden = await signatures.view(
+    "Cond_User",
+    "normal",
+    new Request(url, {
+      headers: {
+        "If-None-Match": '"different", w/"abc123"',
+        "If-Modified-Since": new Date(fileTime + 60_000).toUTCString(),
+      },
+    }),
+  );
+  expect(overridden.status).toBe(200);
+
+  // If-Modified-Since applies when If-None-Match is absent.
+  for (const [header, expectedStatus] of [
+    [new Date(fileTime).toUTCString(), 304],
+    [new Date(fileTime + 60_000).toUTCString(), 304],
+    [new Date(fileTime - 1000).toUTCString(), 200],
+    ["not-a-date", 200],
+    ["2026", 200],
+  ] as const) {
+    const res = await signatures.view(
+      "Cond_User",
+      "normal",
+      new Request(url, { headers: { "If-Modified-Since": header } }),
+    );
+    expect(res.status).toBe(expectedStatus);
   }
 });
 
@@ -470,6 +664,11 @@ test("An upstream Retry-After stops requests for other usernames too", async () 
   expect(second.status).toBe(503);
   expect(requests).toBe(1);
   expect(second.headers.get("Cache-Control")).toBe("no-store");
+
+  // Persisted upstream_retry is loaded into memory across restarts.
+  const reopened = new State(app.directory);
+  cleanups.push(async () => reopened.close());
+  expect(reopened.retry("Third_User")?.status).toBe(503);
 });
 
 test("Simultaneous normal and compact views share one profile refresh", async () => {
@@ -708,6 +907,31 @@ test("Pruning removes inactive PNGs but retains accounts, totals and active imag
     normal: null,
     small: null,
   });
+});
+
+test("Pruning retains anime covers for 14 days while expiring avatars after 1 day", async () => {
+  const app = await application();
+  const cacheDir = join(app.directory, "cache");
+  await mkdir(cacheDir, { recursive: true });
+  const now = Date.now();
+  const day = 86_400_000;
+  const entries = [
+    ["cover-fresh", now - 10 * day, true],
+    ["cover-expired", now - 15 * day, false],
+    ["avatar-fresh", now - 0.5 * day, true],
+    ["avatar-expired", now - 2 * day, false],
+    ["legacy-expired", now - 2 * day, false],
+  ] as const;
+  for (const [name, mtime] of entries) {
+    const path = join(cacheDir, name);
+    await Bun.write(path, "bytes");
+    await utimes(path, mtime / 1000, mtime / 1000);
+  }
+  const result = await prune(app.state, app.images, cacheDir);
+  expect(result.cached).toBe(3);
+  for (const [name, , shouldExist] of entries) {
+    expect(await Bun.file(join(cacheDir, name)).exists()).toBe(shouldExist);
+  }
 });
 
 test("Publishing a refresh does not count as a new view or keep an inactive account alive", async () => {

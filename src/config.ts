@@ -5,6 +5,8 @@ export const publicDirectory = resolve(process.env.PUBLIC_DIRECTORY || "dist");
 export const origin = process.env.SITE_ORIGIN || "https://malsignature.com";
 export const freshnessSeconds =
   Number(process.env.FRESHNESS_SECONDS) || 60 * 60;
+export const avatarCacheTtlMs = 86_400_000;
+export const coverCacheTtlMs = 14 * 86_400_000;
 export const stateFlushIntervalMs =
   Number(process.env.STATE_FLUSH_MS) || 15_000;
 export const generationLimits = {

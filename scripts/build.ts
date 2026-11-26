@@ -18,7 +18,7 @@ import {
 import { home, notFound, rankingPage, result } from "../src/pages";
 import { rankingSearchIndexes } from "../src/ranking-search";
 import { State } from "../src/state";
-import { staticHeaderRules } from "../src/static";
+import { renderHeadersFile } from "../src/static";
 import { buildAssets } from "./assets";
 
 export async function build() {
@@ -31,7 +31,10 @@ export async function build() {
   let published = false;
   try {
     await mkdir(join(staging, "assets"), { recursive: true });
-    const assetPaths = await buildAssets(join(staging, "assets"));
+    const { rewrite: assetPaths, faviconIco } = await buildAssets(
+      join(staging, "assets"),
+    );
+    await Bun.write(join(staging, "favicon.ico"), faviconIco);
     const searchVersion = Bun.hash
       .xxHash3(JSON.stringify({ pageSize, entries: ranking.entries }))
       .toString(16);
@@ -110,19 +113,6 @@ export async function build() {
     await writePage("index.html", home(ga));
     await writePage("signature/index.html", result(ga));
     await writePage("404.html", notFound());
-    await Bun.write(
-      join(staging, "_headers"),
-      `${Object.entries(staticHeaderRules)
-        .map(([pattern, headers]) =>
-          [
-            pattern,
-            ...Object.entries(headers).map(
-              ([key, value]) => `  ${key}: ${value}`,
-            ),
-          ].join("\n"),
-        )
-        .join("\n\n")}\n`,
-    );
     const paths = ["/"];
     for (
       let page = 1;
@@ -174,7 +164,7 @@ export async function build() {
         )
           continue;
         const info = await stat(source);
-        if (Date.now() - info.mtimeMs < 86_400_000) {
+        if (Date.now() - info.mtimeMs < 259_200_000) {
           await cp(source, destination, {
             recursive: true,
             preserveTimestamps: true,
@@ -182,6 +172,13 @@ export async function build() {
         }
       }
     }
+    const emittedAssets = (await readdir(join(staging, "assets"))).filter(
+      (file) => !file.endsWith(".map"),
+    );
+    await Bun.write(
+      join(staging, "_headers"),
+      renderHeadersFile(emittedAssets),
+    );
     const previous = await readlink(publicDirectory).catch(
       (error: NodeJS.ErrnoException) => {
         if (error.code !== "ENOENT") throw error;

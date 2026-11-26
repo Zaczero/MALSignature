@@ -52,6 +52,7 @@ export class State {
     { username: string; start: number; end: number }
   >();
   private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private upstreamRetryAt = 0;
 
   constructor(directory: string, options: StateOptions = {}) {
     mkdirSync(directory, { recursive: true });
@@ -111,6 +112,12 @@ export class State {
       })
       .immediate();
     this.activity = new Activity(this.db);
+    this.upstreamRetryAt =
+      this.db
+        .query<{ retry_at: number }, []>(
+          "SELECT retry_at FROM upstream_retry WHERE id = 1",
+        )
+        .get()?.retry_at ?? 0;
     if (this.flushIntervalMs > 0) {
       this.flushTimer = setInterval(() => {
         try {
@@ -230,29 +237,24 @@ export class State {
     })();
   }
   retry(username: string): Retry | null {
+    const now = Date.now();
     const local = this.db
       .query<Retry, [string]>(
         "SELECT * FROM refresh_failures WHERE username = ?",
       )
       .get(username);
-    const upstream = this.db
-      .query<{ retry_at: number }, []>(
-        "SELECT retry_at FROM upstream_retry WHERE id = 1",
-      )
-      .get();
     if (
-      upstream &&
-      upstream.retry_at > Date.now() &&
-      (!local || upstream.retry_at > local.retry_at)
+      this.upstreamRetryAt > now &&
+      (!local || this.upstreamRetryAt > local.retry_at)
     ) {
       return {
         failures: 0,
-        retry_at: upstream.retry_at,
+        retry_at: this.upstreamRetryAt,
         status: 503,
         message: "MyAnimeList is taking a break. Please try again later.",
       };
     }
-    return local && local.retry_at > Date.now() ? local : null;
+    return local && local.retry_at > now ? local : null;
   }
   defer(username: string, error: unknown) {
     const previous = this.db
@@ -284,11 +286,13 @@ export class State {
         missing || previous?.profile_missing ? 1 : 0,
       );
     if (error instanceof ProfileError && (status === 429 || status === 503)) {
+      const upstreamRetryAt = Date.now() + Math.max(900, retryAfter) * 1000;
       this.db
         .query(
           "INSERT INTO upstream_retry VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET retry_at = max(retry_at, excluded.retry_at)",
         )
-        .run(Date.now() + Math.max(900, retryAfter) * 1000);
+        .run(upstreamRetryAt);
+      this.upstreamRetryAt = Math.max(this.upstreamRetryAt, upstreamRetryAt);
     }
     return retryAt;
   }
